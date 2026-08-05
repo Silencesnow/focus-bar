@@ -1,49 +1,92 @@
 # Focus Bar
 
-Focus Bar 是一个 macOS 本地注意力提示条。当前连接 cmux 和 Codex：显示正在运行的 workspace/任务、推断注意力状态，并在点击后跳转到正确的 cmux workspace 或 Codex 任务。
+Focus Bar 是一个 macOS 本地注意力提示条。它连接 **cmux** 和 **Codex**，在菜单栏显示正在运行的 workspace / 任务、推断每个任务的注意力状态，并支持点击跳转到对应的 cmux workspace、Codex 任务、Chrome 标签页或 VS Code 窗口。
 
-## 当前状态
+- [任务状态](#任务状态)
+- [Chrome 与 VS Code 跳转](#chrome-与-vs-code-跳转)
+- [任务执行统计](#任务执行统计)
+- [前置条件](#前置条件)
+- [安装与发布](#安装与发布)
+- [开发](#开发)
+- [验证](#验证)
+- [数据源错误](#数据源错误)
 
-- `🔴 需要处理`：cmux 有未读 Waiting、输入请求、阻塞或失败通知。
-- `🟡 待检查`：cmux 有未读 Completed、Done 或成功通知。
-- `🟢 执行中`：最近一次提交晚于最近一次终态通知。
-- `⬜ 空闲`：没有需要注意的活动。
+## 任务状态
 
-右键任务可以临时覆盖状态；选择“自动判断”会恢复自动状态。界面只显示当前打开的 cmux workspace，`~/.focus.json` 中的历史记录不会被删除。
+提示条用四种颜色表示每个任务的注意力状态：
 
-Codex 任务从 `~/.codex/state_*.sqlite` 和对应 session 事件中恢复：本轮已经开始但尚未完成时保持绿色，即使后台 shell 长时间没有新输出也不会变为空闲；完成后在首次点击前为黄色，点击跳回 Codex 后变为灰色。普通空闲任务只显示最近 24 小时，运行中、等待输入、未查看完成以及配置过跳转目标的任务不会因超时隐藏。Codex 状态每 5 秒检查一次，运行时每 2 秒检查一次。
+| 状态 | 含义 |
+| --- | --- |
+| 🔴 需要处理 | cmux 有未读 Waiting、输入请求、阻塞或失败通知 |
+| 🟡 待检查 | cmux 有未读 Completed、Done 或成功通知 |
+| 🟢 执行中 | 最近一次提交晚于最近一次终态通知 |
+| ⬜ 空闲 | 没有需要注意的活动 |
 
-## Chrome 与 VS Code 跳转配置
+- **手动覆盖**：右键任务可临时覆盖状态；选择「自动判断」恢复自动状态。
+- **可见范围**：界面只显示当前打开的 cmux workspace，`~/.focus.json` 中的历史记录不会被删除。
 
-点击提示条右上角的 `⚙️`，或右键任务选择“配置跳转目标”。配置窗口会列出当前 cmux workspace 和 Codex 任务：
+### Codex 任务
 
-- Chrome 链接：每个任务可配置多个“标签 + 完整 URL”，例如 Web MR、API MR；工具条会直接显示这些标签按钮。点击后优先在选中的普通 Chrome 实例中复用已有 tab：匹配会忽略查询参数和 `#` 后缀，同一 `/merges/<MR号>` 下的根页、Files、Commits 等视图视为同一个目标。找不到时才通过官方 Chrome 启动器在普通会话中打开新 tab。
-- VS Code workspace 名称：用于匹配当前已打开窗口，可留空并从目录名推断。
-- VS Code workspace 目录：必填绝对路径。
-- 文件与行号：可选，文件路径相对于 workspace。
+Codex 任务从 `~/.codex/state_*.sqlite` 和对应 session 事件中恢复：
 
-配置窗口可以单独测试每个 Chrome 链接和 VS Code。保存后，提示条会立即出现带标签的 `🌐` 按钮和 `📝` 图标，不需要等待轮询。工具条会通过 hover、按压、加载中提示和成功/失败消息反馈跳转状态，并持续高亮每个任务最后一次成功打开的 Chrome 链接。
+- **执行中（绿）**：本轮已开始但尚未完成时保持绿色，即使后台 shell 长时间无新输出也不会变空闲。
+- **待检查（黄）**：完成后、首次点击前显示黄色。
+- **空闲（灰）**：点击跳回 Codex 后变灰。
+- **保留规则**：普通空闲任务只显示最近 24 小时；运行中、等待输入、未查看完成、配置过跳转目标的任务不会因超时隐藏。
+- **检查频率**：Codex 状态每 5 秒检查一次，运行时每 2 秒检查一次。
 
-当多个 Google Chrome 实例同时运行时，Focus Bar 会选择当前最前面的普通 Chrome，并忽略带 `--remote-debugging-port` 的调试实例。若只有调试实例，请先启动普通 Chrome。
+## Chrome 与 VS Code 跳转
+
+点击提示条右上角的 `⚙️`，或右键任务选择「配置跳转目标」。配置窗口会列出当前 cmux workspace 和 Codex 任务，可为每个任务设置：
+
+| 配置项 | 说明 |
+| --- | --- |
+| Chrome 链接 | 多个「标签 + 完整 URL」，如 Web MR、API MR；工具条直接显示这些标签按钮 |
+| VS Code workspace 名称 | 用于匹配已打开窗口，可留空并从目录名推断 |
+| VS Code workspace 目录 | 必填绝对路径 |
+| 文件与行号 | 可选，文件路径相对于 workspace |
+
+### Chrome 标签复用
+
+点击 Chrome 链接时优先在选中的普通 Chrome 实例中复用已有 tab：
+
+- 匹配忽略查询参数和 `#` 后缀。
+- 同一 `/merges/<MR号>` 下的根页、Files、Commits 等视图视为同一目标。
+- 找不到时才通过官方 Chrome 启动器在普通会话中打开新 tab。
+
+多个 Chrome 实例同时运行时，Focus Bar 选择当前最前面的**普通** Chrome，忽略带 `--remote-debugging-port` 的调试实例。若只有调试实例，请先启动普通 Chrome。
+
+### 反馈与权限
+
+- 配置窗口可单独测试每个 Chrome 链接和 VS Code。
+- 保存后提示条立即出现带标签的 `🌐` 按钮和 `📝` 图标，无需等待轮询。
+- 工具条通过 hover、按压、加载中提示和成功/失败消息反馈跳转状态，并持续高亮每个任务最后一次成功打开的 Chrome 链接。
 
 首次使用时 macOS 可能请求权限：
 
-- Chrome 需要“系统设置 → 隐私与安全性 → 自动化”中的 Google Chrome 控制权限。
-- VS Code 已打开窗口的精确聚焦需要“系统设置 → 隐私与安全性 → 辅助功能”权限。
+- **Chrome**：系统设置 → 隐私与安全性 → 自动化 → 授予 Google Chrome 控制权限。
+- **VS Code**（精确聚焦已打开窗口）：系统设置 → 隐私与安全性 → 辅助功能。
 
-Focus Bar 只把 URL 和路径作为独立进程参数传递，不会拼接到 AppleScript 源码或 shell 命令中。
+> Focus Bar 只把 URL 和路径作为独立进程参数传递，不会拼接到 AppleScript 源码或 shell 命令中。
 
 ## 任务执行统计
 
-点击工具条底部的“◷ 统计”可以查看今天或近 7 天的任务执行情况。统计直接复用 Focus Bar 已经算好的任务红/绿状态，每次刷新记录一次状态区间，而不是猜测键盘或前台窗口。
+点击工具条底部的「◷ 统计」查看今天或近 7 天的任务执行情况。统计直接复用 Focus Bar 已算好的任务红/绿状态，每次刷新记录一次状态区间，而不是猜测键盘或前台窗口。
 
-- 顶部展示 **总运行时长**：各任务执行时间累加，反映 AI 一直在干活的时间。头部同时显示本次统计范围的起始时间。
-- 每个任务展示 **执行**、**中断** 时长和 **轮次**（几次执行、几次中断）。
-- 每个任务下方有一条按时间顺序绘制的分段条形图，绿色为执行段、灰色为中断段，按各段时长比例缩放，直观呈现“执行 → 中断 → 执行”的间歇节奏。
+展示内容：
 
-口径说明：`executing` 计为执行时间；任务变红（`needs_action` / `needs_review`）开始一段待闭合的中断，`idle` 既不执行也不清除该中断；只有当同一任务之后再次进入 `executing` 时，这段中断才被记录并闭合，未闭合的红色尾段直接丢弃。状态采集中断超过 15 秒会打断连续性，不会跨离线时段补时间，避免应用关闭后虚增。
+- **总运行时长**：各任务执行时间累加，反映 AI 一直在干活的时间；头部同时显示统计范围起始时间。
+- **每个任务**：执行、中断时长和轮次（几次执行、几次中断）。
+- **分段条形图**：按时间顺序绘制，绿色为执行段、灰色为中断段，按时长比例缩放，直观呈现「执行 → 中断 → 执行」的间歇节奏。
 
-本地采集只保存状态区间、来源和任务标识，不保存按键内容、AI 对话内容、网页内容或代码内容。数据保存在系统应用数据目录的 `com.shamingming.focus-bar/activity.sqlite3`。旧的前台应用停留统计（`activity_segments` 表）保留但不再作为主统计。
+统计口径：
+
+- `executing` 计为执行时间。
+- 任务变红（`needs_action` / `needs_review`）开始一段待闭合的中断；`idle` 既不执行也不清除该中断。
+- 只有当同一任务之后再次进入 `executing` 时，这段中断才被记录并闭合；未闭合的红色尾段直接丢弃。
+- 状态采集中断超过 15 秒会打断连续性，不跨离线时段补时间，避免应用关闭后虚增。
+
+隐私与存储：本地采集只保存状态区间、来源和任务标识，**不**保存按键内容、AI 对话内容、网页内容或代码内容。数据保存在 `com.shamingming.focus-bar/activity.sqlite3`（系统应用数据目录）。旧的前台应用停留统计（`activity_segments` 表）保留但不再作为主统计。
 
 ## 前置条件
 
@@ -63,9 +106,9 @@ Focus Bar 只把 URL 和路径作为独立进程参数传递，不会拼接到 A
 }
 ```
 
-修改前先备份配置。修改后按当前 cmux 版本的要求 reload 或重启。Focus Bar 只检查这个条件，不会自动修改 cmux 设置。
+修改前先备份配置，修改后按当前 cmux 版本要求 reload 或重启。Focus Bar 只检查该条件，不会自动修改 cmux 设置。
 
-如果 Focus Bar 因为该配置未开启而报 `ACCESS_DENIED`，工具条顶部会出现「一键开启 cmux 访问」按钮。点击后 Focus Bar 会先把现有 `~/.config/cmux/cmux.json` 备份到 `cmux.json.focus-bar.bak`，再合并写入 `automation.socketControlMode = "allowAll"`（保留其它字段），然后提示你重启 cmux。除此之外 Focus Bar 不会主动改动 cmux 配置。
+**一键开启**：如果因该配置未开启而报 `ACCESS_DENIED`，工具条顶部会出现「一键开启 cmux 访问」按钮。点击后 Focus Bar 会先把现有配置备份到 `cmux.json.focus-bar.bak`，再合并写入 `automation.socketControlMode = "allowAll"`（保留其它字段），然后提示你重启 cmux。除此之外不会主动改动 cmux 配置。
 
 ## 安装与发布
 
@@ -88,7 +131,7 @@ gh release create v0.1.0 \
   --title "Focus Bar v0.1.0" --notes "首个可用版本"
 ```
 
-当前构建使用 ad-hoc 签名（`signingIdentity: "-"`），未经过 Apple 公证。从网络下载的用户首次打开会被 Gatekeeper 拦截，可右键「打开」，或执行：
+**Gatekeeper 提示**：当前构建使用 ad-hoc 签名（`signingIdentity: "-"`），未经过 Apple 公证。从网络下载的用户首次打开会被拦截，可右键「打开」，或执行：
 
 ```bash
 xattr -cr /Applications/focus-bar.app
@@ -103,14 +146,14 @@ bun install
 bun run tauri dev
 ```
 
-Focus Bar 按以下顺序查找 CLI：
+**CLI 查找顺序**：
 
 1. `CMUX_BUNDLED_CLI_PATH`
 2. 当前 `PATH` 中的 `cmux`
 3. `/Applications/cmux.app/Contents/Resources/bin/cmux`
 4. `~/Applications/cmux.app/Contents/Resources/bin/cmux`
 
-socket 优先使用 `CMUX_SOCKET_PATH`，否则读取 `~/.local/state/cmux/last-socket-path`，最后交给 cmux CLI 自动发现。
+**socket 查找顺序**：`CMUX_SOCKET_PATH` → `~/.local/state/cmux/last-socket-path` → 交给 cmux CLI 自动发现。
 
 ## 验证
 
@@ -129,9 +172,11 @@ python3 scripts/test_cmux_live.py --jump workspace:1
 
 ## 数据源错误
 
-- `CLI_NOT_FOUND`：找不到 cmux CLI。
-- `CMUX_NOT_RUNNING`：cmux 未运行或 socket 不存在。
-- `ACCESS_DENIED`：通常表示 `socketControlMode` 仍是 `cmuxOnly`。
-- `TIMEOUT`：cmux 在限定时间内没有响应。
-- `INVALID_RESPONSE`：cmux 返回的数据无法解析。
-- `WATCHER_DISCONNECTED`：实时事件流断开；界面保留最后一次成功数据，并继续重连和轮询。
+| 错误码 | 含义 |
+| --- | --- |
+| `CLI_NOT_FOUND` | 找不到 cmux CLI |
+| `CMUX_NOT_RUNNING` | cmux 未运行或 socket 不存在 |
+| `ACCESS_DENIED` | 通常表示 `socketControlMode` 仍是 `cmuxOnly` |
+| `TIMEOUT` | cmux 在限定时间内没有响应 |
+| `INVALID_RESPONSE` | cmux 返回的数据无法解析 |
+| `WATCHER_DISCONNECTED` | 实时事件流断开；界面保留最后一次成功数据，并继续重连和轮询 |
