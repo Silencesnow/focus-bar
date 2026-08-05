@@ -4,7 +4,7 @@ use tokio::time::timeout;
 
 mod cmux_runtime;
 #[cfg(target_os = "macos")]
-mod macos_hover;
+mod cursor_watcher;
 mod navigation;
 mod task_config;
 
@@ -69,15 +69,10 @@ pub fn run() {
             write_home_file,
             home_dir,
         ])
-        .on_page_load(|webview, payload| {
+        .setup(|app| {
             #[cfg(target_os = "macos")]
-            if webview.label() == "main"
-                && matches!(payload.event(), tauri::webview::PageLoadEvent::Finished)
-            {
-                if let Err(error) = macos_hover::enable_inactive_hover(webview) {
-                    eprintln!("failed to enable inactive hover: {error}");
-                }
-            }
+            cursor_watcher::start(app.handle().clone());
+            Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -13,6 +13,7 @@ import {
   type ActiveChromeTargets,
 } from "./chrome-activation";
 import { jumpSmart, jumpToChrome, jumpToCmux, jumpToVscode } from "./jump";
+import { startInactiveHoverTracking } from "./inactive-hover";
 import { chromeTargetsFromTask } from "./navigation-config";
 import { ensureTaskForCmux, readFocusData, writeFocusData } from "./store";
 import type {
@@ -38,6 +39,7 @@ let eventTimer: ReturnType<typeof setTimeout> | null = null;
 let fallbackTimer: ReturnType<typeof setInterval> | null = null;
 const activeChromeTargets: ActiveChromeTargets = new Map();
 const unlisteners: UnlistenFn[] = [];
+let stopInactiveHoverTracking: (() => void) | null = null;
 
 async function positionWindowTopCenter() {
   const win = getCurrentWindow();
@@ -427,6 +429,7 @@ async function startDrag(event: MouseEvent) {
 
 async function main() {
   await positionWindowTopCenter();
+  stopInactiveHoverTracking = await startInactiveHoverTracking();
   await refresh();
   await startEventRefresh();
   document.getElementById("settings-button")?.addEventListener("click", () => void openSettings());
@@ -440,6 +443,7 @@ async function main() {
 }
 
 window.addEventListener("beforeunload", () => {
+  stopInactiveHoverTracking?.();
   if (eventTimer) clearTimeout(eventTimer);
   if (fallbackTimer) clearInterval(fallbackTimer);
   for (const unlisten of unlisteners) unlisten();
