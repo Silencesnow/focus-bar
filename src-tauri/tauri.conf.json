@@ -17,7 +17,7 @@
         "label": "main",
         "title": "focus-bar",
         "width": 600,
-        "height": 140,
+        "height": 156,
         "decorations": false,
         "alwaysOnTop": true,
         "acceptFirstMouse": true,
