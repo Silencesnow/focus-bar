@@ -11,12 +11,28 @@ export const STATUS_META: Record<TaskStatus, { color: string; emoji: string; lab
 
 export interface VscodeTarget {
   workspace: string;
+  workspace_name?: string;
   file?: string;
   line?: number;
 }
 
 export interface ChromeTarget {
   url: string;
+}
+
+export type NavigationErrorCode =
+  | "INVALID_TARGET"
+  | "CHROME_NOT_INSTALLED"
+  | "VSCODE_NOT_INSTALLED"
+  | "AUTOMATION_PERMISSION_REQUIRED"
+  | "ACCESSIBILITY_PERMISSION_REQUIRED"
+  | "TARGET_COMMAND_FAILED"
+  | "TARGET_TIMEOUT";
+
+export interface NavigationError {
+  code: NavigationErrorCode;
+  message: string;
+  detail?: string | null;
 }
 
 export interface TaskConfig {
