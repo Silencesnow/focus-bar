@@ -1,6 +1,12 @@
 # Focus Bar
 
-Focus Bar 是一个 macOS 本地注意力提示条。它连接 **cmux** 和 **Codex**，在菜单栏显示正在运行的 workspace / 任务、推断每个任务的注意力状态，并支持点击跳转到对应的 cmux workspace、Codex 任务、Chrome 标签页或 VS Code 窗口。
+Focus Bar 是一个 macOS 本地 AI 任务注意力中枢。它连接 **cmux** 和 **Codex**，以任务为单位汇总 AI 状态，并把对应的 AI 会话、VS Code workspace、Chrome 页面、待办与执行统计收拢到屏幕左侧的一个入口。
+
+状态变化会自动汇入 Focus Bar；需要继续工作时，点击任务或工具按钮即可回到对应的 cmux workspace、Codex 任务、代码窗口或浏览器标签页。
+
+![Focus Bar 以任务为中心串联 AI、代码与浏览器](docs/assets/focus-bar-problem-solution-v3.png)
+
+> 一个任务，对应一组状态与工作现场。Focus Bar 负责聚合信息与提供入口，不替代原有工具。
 
 - [任务状态](#任务状态)
 - [Chrome 与 VS Code 跳转](#chrome-与-vs-code-跳转)
