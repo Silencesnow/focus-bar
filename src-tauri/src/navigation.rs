@@ -85,7 +85,7 @@ struct ScriptSpec {
     args: Vec<String>,
 }
 
-fn validate_http_url(value: &str) -> Result<(), NavigationError> {
+pub(crate) fn validate_http_url(value: &str) -> Result<(), NavigationError> {
     let parsed = Url::parse(value).map_err(|error| {
         NavigationError::new(
             NavigationErrorCode::InvalidTarget,
@@ -116,7 +116,7 @@ fn safe_relative_file(value: &str) -> bool {
         })
 }
 
-fn vscode_goto_target(
+pub(crate) fn vscode_goto_target(
     workspace: &Path,
     file: Option<&str>,
     line: Option<u32>,
