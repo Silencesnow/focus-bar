@@ -103,12 +103,14 @@ async fn discover_chrome_processes() -> Result<Vec<ChromeProcess>, NavigationErr
 
 const CHROME_SCRIPT: &str = r#"
 use framework "Foundation"
+use framework "AppKit"
 use framework "ScriptingBridge"
 
 on run argv
   set targetPid to (item 1 of argv) as integer
   set targetUrl to item 2 of argv
   set chromeApp to current application's SBApplication's applicationWithProcessIdentifier:targetPid
+  set runningApp to current application's NSRunningApplication's runningApplicationWithProcessIdentifier:targetPid
   set chromeWindows to chromeApp's valueForKey:"windows"
   set windowCount to count of chromeWindows
 
@@ -123,32 +125,14 @@ on run argv
           if ((tabUrls's objectAtIndex:tabIndex) as text) is targetUrl then
             chromeWindow's setValue:(tabIndex + 1) forKey:"activeTabIndex"
             chromeWindow's setValue:1 forKey:"index"
-            chromeApp's |activate|()
+            runningApp's activateWithOptions:3
             return "FOUND"
           end if
         end repeat
       end if
     end repeat
   end if
-
-  if windowCount is 0 then
-    set windowClass to chromeApp's classForScriptingClass:"window"
-    set newWindow to windowClass's alloc()'s initWithProperties:(current application's NSDictionary's dictionary())
-    chromeWindows's addObject:newWindow
-    set chromeWindows to chromeApp's valueForKey:"windows"
-  end if
-
-  set targetWindow to chromeWindows's objectAtIndex:0
-  set chromeTabs to targetWindow's valueForKey:"tabs"
-  set tabClass to chromeApp's classForScriptingClass:"tab"
-  set properties to current application's NSDictionary's dictionaryWithObject:targetUrl forKey:"URL"
-  set newTab to tabClass's alloc()'s initWithProperties:properties
-  chromeTabs's addObject:newTab
-  set newTabIndex to count of chromeTabs
-  targetWindow's setValue:newTabIndex forKey:"activeTabIndex"
-  targetWindow's setValue:1 forKey:"index"
-  chromeApp's |activate|()
-  return "OPENED"
+  return "NOT_FOUND"
 end run
 "#;
 
@@ -229,6 +213,11 @@ fn chrome_command(pid: u32, url: &str) -> Result<ScriptSpec, NavigationError> {
         script: CHROME_SCRIPT,
         args: vec![pid.to_string(), url.to_string()],
     })
+}
+
+fn chrome_open_args(url: &str) -> Result<Vec<String>, NavigationError> {
+    validate_http_url(url)?;
+    Ok(vec!["--new-tab".into(), url.into()])
 }
 
 fn safe_relative_file(value: &str) -> bool {
@@ -390,15 +379,36 @@ pub async fn focus_chrome_url(url: String) -> Result<(), NavigationError> {
         .arg("--")
         .args(&spec.args);
     let output = run_command(&mut command, "Google Chrome automation").await?;
-    if output.status.success() {
-        return Ok(());
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(NavigationError::new(
+            classify_automation_failure(&detail),
+            "Could not focus the Chrome target",
+            Some(detail),
+        ));
     }
-    let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    Err(NavigationError::new(
-        classify_automation_failure(&detail),
-        "Could not focus the Chrome target",
-        Some(detail),
-    ))
+    match String::from_utf8_lossy(&output.stdout).trim() {
+        "FOUND" => Ok(()),
+        "NOT_FOUND" => {
+            let mut open_command = Command::new(CHROME_EXECUTABLE);
+            open_command.args(chrome_open_args(&url)?);
+            let open_output = run_command(&mut open_command, "Google Chrome new tab").await?;
+            if open_output.status.success() {
+                Ok(())
+            } else {
+                Err(NavigationError::new(
+                    NavigationErrorCode::TargetCommandFailed,
+                    "Could not open the Chrome target",
+                    Some(String::from_utf8_lossy(&open_output.stderr).trim().into()),
+                ))
+            }
+        }
+        response => Err(NavigationError::new(
+            NavigationErrorCode::TargetCommandFailed,
+            "Chrome automation returned an unexpected response",
+            Some(response.into()),
+        )),
+    }
 }
 
 #[tauri::command]
@@ -515,6 +525,28 @@ mod tests {
         let spec = chrome_command(712, "https://example.com").unwrap();
         assert!(spec.script.contains("valueForKey:\"URL\""));
         assert!(!spec.script.contains("URL of tab"));
+    }
+
+    #[test]
+    fn chrome_script_activates_the_selected_pid_with_appkit() {
+        let spec = chrome_command(712, "https://example.com").unwrap();
+        assert!(spec.script.contains("runningApplicationWithProcessIdentifier"));
+        assert!(spec.script.contains("activateWithOptions:3"));
+        assert!(!spec.script.contains("chromeApp's |activate|()"));
+    }
+
+    #[test]
+    fn chrome_script_reports_missing_target_without_constructing_tabs() {
+        let spec = chrome_command(712, "https://example.com").unwrap();
+        assert!(spec.script.contains("return \"NOT_FOUND\""));
+        assert!(!spec.script.contains("classForScriptingClass"));
+        assert!(!spec.script.contains("initWithProperties"));
+    }
+
+    #[test]
+    fn chrome_open_fallback_uses_url_as_an_argument() {
+        let hostile = "https://example.com/\"%20&%20do%20shell%20script%20\"bad\"";
+        assert_eq!(chrome_open_args(hostile).unwrap(), vec!["--new-tab", hostile]);
     }
 
     #[test]
