@@ -101,14 +101,24 @@ async fn discover_chrome_processes() -> Result<Vec<ChromeProcess>, NavigationErr
     )))
 }
 
-const CHROME_SCRIPT: &str = r#"
+const CHROME_SCRIPT: &str = r##"
 use framework "Foundation"
 use framework "AppKit"
 use framework "ScriptingBridge"
 
+on matchesNavigationTarget(candidateUrl, matchPrefix)
+  if candidateUrl is matchPrefix then return true
+  set candidateText to current application's NSString's stringWithString:candidateUrl
+  if (candidateText's hasPrefix:(matchPrefix & "/")) as boolean then return true
+  if (candidateText's hasPrefix:(matchPrefix & "#")) as boolean then return true
+  if (candidateText's hasPrefix:(matchPrefix & "?")) as boolean then return true
+  return false
+end matchesNavigationTarget
+
 on run argv
   set targetPid to (item 1 of argv) as integer
   set targetUrl to item 2 of argv
+  set matchPrefix to item 3 of argv
   set chromeApp to current application's SBApplication's applicationWithProcessIdentifier:targetPid
   set runningApp to current application's NSRunningApplication's runningApplicationWithProcessIdentifier:targetPid
   set chromeWindows to chromeApp's valueForKey:"windows"
@@ -122,7 +132,7 @@ on run argv
       set tabCount to count of tabUrls
       if tabCount > 0 then
         repeat with tabIndex from 0 to (tabCount - 1)
-          if ((tabUrls's objectAtIndex:tabIndex) as text) is targetUrl then
+          if my matchesNavigationTarget((tabUrls's objectAtIndex:tabIndex) as text, matchPrefix) then
             chromeWindow's setValue:(tabIndex + 1) forKey:"activeTabIndex"
             chromeWindow's setValue:1 forKey:"index"
             runningApp's activateWithOptions:3
@@ -134,7 +144,7 @@ on run argv
   end if
   return "NOT_FOUND"
 end run
-"#;
+"##;
 
 const VSCODE_SCRIPT: &str = r#"
 on run argv
@@ -189,7 +199,7 @@ struct ScriptSpec {
     args: Vec<String>,
 }
 
-pub(crate) fn validate_http_url(value: &str) -> Result<(), NavigationError> {
+fn parse_http_url(value: &str) -> Result<Url, NavigationError> {
     let parsed = Url::parse(value).map_err(|error| {
         NavigationError::new(
             NavigationErrorCode::InvalidTarget,
@@ -204,14 +214,44 @@ pub(crate) fn validate_http_url(value: &str) -> Result<(), NavigationError> {
             None,
         ));
     }
-    Ok(())
+    Ok(parsed)
+}
+
+pub(crate) fn validate_http_url(value: &str) -> Result<(), NavigationError> {
+    parse_http_url(value).map(|_| ())
+}
+
+fn chrome_match_prefix(value: &str) -> Result<String, NavigationError> {
+    let mut parsed = parse_http_url(value)?;
+    parsed.set_query(None);
+    parsed.set_fragment(None);
+
+    let segments = parsed
+        .path_segments()
+        .map(|segments| segments.collect::<Vec<_>>())
+        .unwrap_or_default();
+    if let Some(merge_index) = segments.iter().position(|segment| *segment == "merges") {
+        if segments
+            .get(merge_index + 1)
+            .is_some_and(|id| !id.is_empty() && id.chars().all(|character| character.is_ascii_digit()))
+        {
+            parsed.set_path(&format!("/{}", segments[..=merge_index + 1].join("/")));
+        }
+    }
+
+    if parsed.path().len() > 1 && parsed.path().ends_with('/') {
+        let normalized_path = parsed.path().trim_end_matches('/').to_string();
+        parsed.set_path(&normalized_path);
+    }
+
+    Ok(parsed.to_string())
 }
 
 fn chrome_command(pid: u32, url: &str) -> Result<ScriptSpec, NavigationError> {
-    validate_http_url(url)?;
+    let match_prefix = chrome_match_prefix(url)?;
     Ok(ScriptSpec {
         script: CHROME_SCRIPT,
-        args: vec![pid.to_string(), url.to_string()],
+        args: vec![pid.to_string(), url.to_string(), match_prefix],
     })
 }
 
@@ -516,8 +556,41 @@ mod tests {
         let hostile = "https://example.com/\"%20&%20do%20shell%20script%20\"bad\"";
         let spec = chrome_command(712, hostile).unwrap();
         assert!(!spec.script.contains(hostile));
-        assert_eq!(spec.args, vec!["712", hostile]);
+        assert_eq!(
+            spec.args,
+            vec!["712".to_string(), hostile.to_string(), chrome_match_prefix(hostile).unwrap()]
+        );
         assert!(spec.script.contains("applicationWithProcessIdentifier"));
+    }
+
+    #[test]
+    fn chrome_match_prefix_ignores_query_and_fragment() {
+        assert_eq!(
+            chrome_match_prefix("https://example.com/review?mode=files#comment-12").unwrap(),
+            "https://example.com/review"
+        );
+    }
+
+    #[test]
+    fn chrome_match_prefix_collapses_merge_views() {
+        let expected = "http://xingyun.jd.com/codingRoot/ling/ling-design/merges/7342";
+        for url in [
+            expected,
+            "http://xingyun.jd.com/codingRoot/ling/ling-design/merges/7342/files",
+            "http://xingyun.jd.com/codingRoot/ling/ling-design/merges/7342/commits",
+            "http://xingyun.jd.com/codingRoot/ling/ling-design/merges/7342/files?mode=diff#note-8",
+        ] {
+            assert_eq!(chrome_match_prefix(url).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn chrome_script_matches_only_at_url_boundaries() {
+        let spec = chrome_command(712, "https://example.com/review").unwrap();
+        assert!(spec.script.contains("matchesNavigationTarget"));
+        assert!(spec.script.contains("matchPrefix & \"/\""));
+        assert!(spec.script.contains("matchPrefix & \"#\""));
+        assert!(spec.script.contains("matchPrefix & \"?\""));
     }
 
     #[test]

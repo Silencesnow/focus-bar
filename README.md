@@ -15,7 +15,7 @@ Focus Bar 是一个 macOS 本地注意力提示条。当前 MVP 只连接 cmux�
 
 点击提示条右上角的 `⚙️`，或右键任务选择“配置跳转目标”。配置窗口会列出当前 cmux workspace：
 
-- Chrome 链接：每个任务可配置多个“标签 + 完整 URL”，例如 Web MR、API MR；工具条会直接显示这些标签按钮。点击后优先在选中的普通 Chrome 实例中精确匹配已有 tab，找不到时通过官方 Chrome 启动器在普通会话中打开新 tab。
+- Chrome 链接：每个任务可配置多个“标签 + 完整 URL”，例如 Web MR、API MR；工具条会直接显示这些标签按钮。点击后优先在选中的普通 Chrome 实例中复用已有 tab：匹配会忽略查询参数和 `#` 后缀，同一 `/merges/<MR号>` 下的根页、Files、Commits 等视图视为同一个目标。找不到时才通过官方 Chrome 启动器在普通会话中打开新 tab。
 - VS Code workspace 名称：用于匹配当前已打开窗口，可留空并从目录名推断。
 - VS Code workspace 目录：必填绝对路径。
 - 文件与行号：可选，文件路径相对于 workspace。
