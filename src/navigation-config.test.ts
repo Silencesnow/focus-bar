@@ -12,7 +12,7 @@ import type { TaskConfig } from "./types";
 function emptyForm(overrides: Partial<NavigationForm> = {}): NavigationForm {
   return {
     name: "Task",
-    chromeUrl: "",
+    chromeTargets: [],
     vscodeWorkspaceName: "",
     vscodeWorkspace: "",
     vscodeFile: "",
@@ -26,6 +26,22 @@ describe("normalizeNavigationForm", () => {
     expect(normalizeNavigationForm(emptyForm())).toEqual({
       name: "Task",
       chrome: null,
+      vscode: null,
+    });
+  });
+
+  test("normalizes multiple labeled Chrome targets", () => {
+    expect(normalizeNavigationForm(emptyForm({
+      chromeTargets: [
+        { label: " Web MR ", url: " https://git.example.com/web/merge_requests/12 " },
+        { label: "API MR", url: "https://git.example.com/api/merge_requests/34" },
+      ],
+    }))).toEqual({
+      name: "Task",
+      chrome: [
+        { label: "Web MR", url: "https://git.example.com/web/merge_requests/12" },
+        { label: "API MR", url: "https://git.example.com/api/merge_requests/34" },
+      ],
       vscode: null,
     });
   });
@@ -50,13 +66,20 @@ describe("normalizeNavigationForm", () => {
 
 describe("validateNavigationForm", () => {
   test("accepts an exact https Chrome URL", () => {
-    expect(validateNavigationForm(emptyForm({ chromeUrl: "https://example.com/path?q=1#result" })))
+    expect(validateNavigationForm(emptyForm({
+      chromeTargets: [{ label: "Preview", url: "https://example.com/path?q=1#result" }],
+    })))
       .toEqual([]);
   });
 
-  test("rejects non-http Chrome URL", () => {
-    expect(validateNavigationForm(emptyForm({ chromeUrl: "javascript:alert(1)" })))
-      .toContain("Chrome 链接必须是有效的 http 或 https URL");
+  test("rejects an invalid URL in any Chrome target", () => {
+    expect(validateNavigationForm(emptyForm({
+      chromeTargets: [
+        { label: "Web MR", url: "https://example.com/valid" },
+        { label: "API MR", url: "javascript:alert(1)" },
+      ],
+    })))
+      .toContain("“API MR”必须是有效的 http 或 https URL");
   });
 
   test("rejects a relative VS Code workspace", () => {
@@ -83,7 +106,10 @@ test("prefills existing navigation fields", () => {
   const task: TaskConfig = {
     id: "task",
     name: "Configured",
-    chrome: { url: "https://example.com" },
+    chrome: [
+      { label: "Web MR", url: "https://example.com/web" },
+      { label: "API MR", url: "https://example.com/api" },
+    ],
     vscode: {
       workspace: "/tmp/app",
       workspace_name: "app",
@@ -92,14 +118,30 @@ test("prefills existing navigation fields", () => {
     },
   };
   const form = formFromTask(task);
-  expect(form.chromeUrl).toBe("https://example.com");
+  expect(form.chromeTargets).toEqual([
+    { label: "Web MR", url: "https://example.com/web" },
+    { label: "API MR", url: "https://example.com/api" },
+  ]);
   expect(form.vscodeWorkspaceName).toBe("app");
   expect(form.vscodeLine).toBe("7");
 });
 
+test("prefills legacy single Chrome target", () => {
+  const task = {
+    id: "legacy",
+    name: "Legacy",
+    chrome: { url: "https://example.com/legacy" },
+  } as TaskConfig;
+  expect(formFromTask(task).chromeTargets).toEqual([
+    { label: "example.com", url: "https://example.com/legacy" },
+  ]);
+});
+
 test("detects dirty forms after trimming", () => {
   expect(formsEqual(emptyForm(), emptyForm({ name: " Task " }))).toBe(true);
-  expect(formsEqual(emptyForm(), emptyForm({ chromeUrl: "https://example.com" }))).toBe(false);
+  expect(formsEqual(emptyForm(), emptyForm({
+    chromeTargets: [{ label: "Docs", url: "https://example.com" }],
+  }))).toBe(false);
 });
 
 test("timeout guidance mentions a possible permission prompt", () => {

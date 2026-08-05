@@ -15,12 +15,12 @@ Focus Bar 是一个 macOS 本地注意力提示条。当前 MVP 只连接 cmux�
 
 点击提示条右上角的 `⚙️`，或右键任务选择“配置跳转目标”。配置窗口会列出当前 cmux workspace：
 
-- Chrome 完整 URL：优先在选中的普通 Chrome 实例中精确匹配已有 tab；找不到时通过官方 Chrome 启动器在普通会话中打开新 tab。
+- Chrome 链接：每个任务可配置多个“标签 + 完整 URL”，例如 Web MR、API MR；工具条会直接显示这些标签按钮。点击后优先在选中的普通 Chrome 实例中精确匹配已有 tab，找不到时通过官方 Chrome 启动器在普通会话中打开新 tab。
 - VS Code workspace 名称：用于匹配当前已打开窗口，可留空并从目录名推断。
 - VS Code workspace 目录：必填绝对路径。
 - 文件与行号：可选，文件路径相对于 workspace。
 
-配置窗口可以在保存前分别测试 Chrome 和 VS Code。保存后，提示条会立即出现 `🌐` 和 `📝` 图标，不需要等待轮询。
+配置窗口可以单独测试每个 Chrome 链接和 VS Code。保存后，提示条会立即出现带标签的 `🌐` 按钮和 `📝` 图标，不需要等待轮询。工具条会通过 hover、按压、加载中提示和成功/失败消息反馈跳转状态。
 
 当多个 Google Chrome 实例同时运行时，Focus Bar 会选择当前最前面的普通 Chrome，并忽略带 `--remote-debugging-port` 的调试实例。若只有调试实例，请先启动普通 Chrome。
 

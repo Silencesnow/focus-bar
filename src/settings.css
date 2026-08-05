@@ -2,7 +2,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 520px; min-height: 420px; }
 button, input { font: inherit; }
-.settings-shell { display: grid; grid-template-columns: 190px minmax(0, 1fr); height: 100vh; }
+.settings-shell { display: grid; grid-template-columns: 200px minmax(0, 1fr); height: 100vh; }
 .workspace-pane { background: #e9e9ed; border-right: 1px solid #d2d2d7; overflow: auto; }
 .workspace-pane header { padding: 20px 16px 10px; }
 h1 { margin: 0; font-size: 18px; }
@@ -21,6 +21,14 @@ input { width: 100%; border: 1px solid #c7c7cc; border-radius: 7px; padding: 7px
 input:focus { border-color: #0a84ff; box-shadow: 0 0 0 3px rgba(10,132,255,.15); }
 fieldset { margin: 0; border: 1px solid #dedee3; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 legend { font-weight: 700; padding: 0 5px; }
+.field-hint { margin: -2px 0 0; color: #6e6e73; font-size: 11px; line-height: 1.45; }
+.chrome-targets { display: flex; flex-direction: column; gap: 9px; }
+.chrome-target-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; padding: 9px; border-radius: 9px; background: #f7f7f8; border: 1px solid #e5e5ea; }
+.chrome-target-fields { display: grid; grid-template-columns: minmax(90px, .42fr) minmax(180px, 1fr); gap: 8px; }
+.chrome-target-actions { display: flex; gap: 5px; padding-bottom: 1px; }
+.chrome-target-actions button { min-width: 48px; }
+.chrome-target-actions .remove-target { min-width: 32px; padding-inline: 8px; color: #d70015; }
+.chrome-list-actions { justify-content: space-between; }
 .inline-fields { display: grid; grid-template-columns: minmax(0, 1fr) 70px; gap: 10px; }
 .button-row { display: flex; gap: 8px; justify-content: flex-end; }
 button { border: 1px solid #c7c7cc; border-radius: 7px; padding: 6px 10px; background: #f7f7f8; cursor: pointer; }
@@ -38,5 +46,6 @@ footer { display: flex; align-items: center; justify-content: space-between; gap
   .form-pane { background: #1c1c1e; }
   input { color: #f5f5f7; border-color: #48484a; background: #2c2c2e; }
   fieldset { border-color: #3a3a3c; }
+  .chrome-target-row { border-color: #3a3a3c; background: #242426; }
   button { color: #f5f5f7; border-color: #48484a; background: #2c2c2e; }
 }

@@ -17,6 +17,7 @@ export interface VscodeTarget {
 }
 
 export interface ChromeTarget {
+  label?: string;
   url: string;
 }
 
@@ -42,7 +43,7 @@ export interface TaskConfig {
   manual_status?: StoredTaskStatus | null;
   note?: string;
   vscode?: VscodeTarget;
-  chrome?: ChromeTarget;
+  chrome?: ChromeTarget | ChromeTarget[];
 }
 
 export interface FocusData {

@@ -11,13 +11,13 @@ import {
   type NavigationForm,
 } from "./navigation-config";
 import { ensureTaskForCmux, readFocusData } from "./store";
-import type { CmuxWorkspace, NavigationError, TaskConfig } from "./types";
+import type { ChromeTarget, CmuxWorkspace, NavigationError, TaskConfig } from "./types";
 import { sourceMessage } from "./view-model";
 
 interface SettingsTask { workspace: CmuxWorkspace; config: TaskConfig }
 
 const fieldIds = {
-  name: "task-name", chromeUrl: "chrome-url", vscodeWorkspaceName: "vscode-name",
+  name: "task-name", vscodeWorkspaceName: "vscode-name",
   vscodeWorkspace: "vscode-workspace", vscodeFile: "vscode-file", vscodeLine: "vscode-line",
 } as const;
 
@@ -28,11 +28,38 @@ let requestedTaskId: string | null = null;
 
 function input(id: string): HTMLInputElement { return document.getElementById(id) as HTMLInputElement; }
 function currentForm(): NavigationForm {
-  return Object.fromEntries(Object.entries(fieldIds).map(([key, id]) => [key, input(id).value])) as unknown as NavigationForm;
+  const values = Object.fromEntries(
+    Object.entries(fieldIds).map(([key, id]) => [key, input(id).value]),
+  ) as Omit<NavigationForm, "chromeTargets">;
+  const chromeTargets = Array.from(document.querySelectorAll<HTMLElement>(".chrome-target-row"))
+    .map((row) => ({
+      label: row.querySelector<HTMLInputElement>(".chrome-label")?.value || "",
+      url: row.querySelector<HTMLInputElement>(".chrome-url")?.value || "",
+    }));
+  return { ...values, chromeTargets };
 }
+
+function renderChromeTargets(targets: ChromeTarget[]) {
+  const rows = targets.length ? targets : [{ label: "", url: "" }];
+  document.getElementById("chrome-targets")!.innerHTML = rows.map((target, index) => `
+    <div class="chrome-target-row" data-index="${index}">
+      <div class="chrome-target-fields">
+        <label>标签<input class="chrome-label" value="${escapeHtml(target.label || "")}" placeholder="例如 Web MR" autocomplete="off" /></label>
+        <label>完整 URL<input class="chrome-url" type="url" value="${escapeHtml(target.url)}" placeholder="https://git.example.com/..." /></label>
+      </div>
+      <div class="chrome-target-actions">
+        <button type="button" data-action="test-chrome" data-index="${index}">测试</button>
+        <button type="button" class="remove-target" data-action="remove-chrome" data-index="${index}" aria-label="删除链接" title="删除链接">×</button>
+      </div>
+    </div>`).join("");
+}
+
 function setForm(form: NavigationForm) {
-  for (const [key, id] of Object.entries(fieldIds)) input(id).value = form[key as keyof NavigationForm];
-  savedForm = { ...form };
+  for (const [key, id] of Object.entries(fieldIds)) {
+    input(id).value = form[key as keyof Omit<NavigationForm, "chromeTargets">];
+  }
+  renderChromeTargets(form.chromeTargets);
+  savedForm = { ...form, chromeTargets: form.chromeTargets.map((target) => ({ ...target })) };
   updateDirtyState();
 }
 function isDirty(): boolean { return !!savedForm && !formsEqual(savedForm, currentForm()); }
@@ -117,13 +144,23 @@ async function saveCurrent() {
   } catch (error) { setStatus(formatError(error), "error"); }
 }
 
-async function testChrome() {
+async function testChrome(index: number) {
   const form = currentForm();
-  const normalized = normalizeNavigationForm(form);
-  if (!normalized.chrome) { setStatus("请先输入 Chrome URL", "error"); return; }
-  const errors = validateNavigationForm({ ...form, vscodeWorkspaceName: "", vscodeWorkspace: "", vscodeFile: "", vscodeLine: "" });
+  const selected = form.chromeTargets[index];
+  if (!selected?.url.trim()) { setStatus("请先输入 Chrome URL", "error"); return; }
+  const chromeForm = {
+    ...form,
+    chromeTargets: [selected],
+    vscodeWorkspaceName: "",
+    vscodeWorkspace: "",
+    vscodeFile: "",
+    vscodeLine: "",
+  };
+  const errors = validateNavigationForm(chromeForm);
   if (errors.length) { setStatus(errors[0], "error"); return; }
-  try { await invoke("focus_chrome_url", { url: normalized.chrome.url }); setStatus("Chrome 跳转成功", "success"); }
+  const target = normalizeNavigationForm(chromeForm).chrome![0];
+  setStatus(`正在打开“${target.label}”…`);
+  try { await invoke("focus_chrome_url", { url: target.url }); setStatus(`“${target.label}”跳转成功`, "success"); }
   catch (error) { setStatus(formatError(error), "error"); }
 }
 
@@ -131,7 +168,7 @@ async function testVscode() {
   const form = currentForm();
   const normalized = normalizeNavigationForm(form);
   if (!normalized.vscode) { setStatus("请先输入 VS Code workspace", "error"); return; }
-  const errors = validateNavigationForm({ ...form, chromeUrl: "" });
+  const errors = validateNavigationForm({ ...form, chromeTargets: [] });
   if (errors.length) { setStatus(errors[0], "error"); return; }
   try {
     const target = normalized.vscode;
@@ -143,16 +180,38 @@ async function testVscode() {
   } catch (error) { setStatus(formatError(error), "error"); }
 }
 
-function clearChrome() { input("chrome-url").value = ""; updateDirtyState(); void saveCurrent(); }
+function addChrome() {
+  const targets = currentForm().chromeTargets;
+  renderChromeTargets([...targets, { label: "", url: "" }]);
+  updateDirtyState();
+  document.querySelectorAll<HTMLInputElement>(".chrome-label").item(targets.length).focus();
+}
+
+function removeChrome(index: number) {
+  const targets = currentForm().chromeTargets;
+  targets.splice(index, 1);
+  renderChromeTargets(targets);
+  updateDirtyState();
+}
+
+function clearChrome() { renderChromeTargets([]); updateDirtyState(); void saveCurrent(); }
 function clearVscode() {
   for (const id of ["vscode-name", "vscode-workspace", "vscode-file", "vscode-line"]) input(id).value = "";
   updateDirtyState(); void saveCurrent();
 }
 
 async function main() {
-  document.querySelectorAll("input").forEach((element) => element.addEventListener("input", updateDirtyState));
-  document.getElementById("navigation-form")!.addEventListener("submit", (event) => { event.preventDefault(); void saveCurrent(); });
-  document.getElementById("test-chrome")!.addEventListener("click", () => void testChrome());
+  const form = document.getElementById("navigation-form")!;
+  form.addEventListener("input", updateDirtyState);
+  form.addEventListener("submit", (event) => { event.preventDefault(); void saveCurrent(); });
+  document.getElementById("chrome-targets")!.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-action]");
+    if (!button) return;
+    const index = Number(button.dataset.index || "0");
+    if (button.dataset.action === "test-chrome") void testChrome(index);
+    if (button.dataset.action === "remove-chrome") removeChrome(index);
+  });
+  document.getElementById("add-chrome")!.addEventListener("click", addChrome);
   document.getElementById("test-vscode")!.addEventListener("click", () => void testVscode());
   document.getElementById("clear-chrome")!.addEventListener("click", clearChrome);
   document.getElementById("clear-vscode")!.addEventListener("click", clearVscode);

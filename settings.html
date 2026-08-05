@@ -19,8 +19,12 @@
           <label>显示名称<input id="task-name" autocomplete="off" /></label>
           <fieldset>
             <legend>Google Chrome</legend>
-            <label>完整 URL<input id="chrome-url" type="url" placeholder="https://example.com/page" /></label>
-            <div class="button-row"><button id="test-chrome" type="button">测试 Chrome</button><button id="clear-chrome" type="button" class="subtle">清除</button></div>
+            <p class="field-hint">一个任务可以配置多个页面，例如不同仓库的 MR。标签会显示在工具条上。</p>
+            <div id="chrome-targets" class="chrome-targets"></div>
+            <div class="button-row chrome-list-actions">
+              <button id="add-chrome" type="button">＋ 添加链接</button>
+              <button id="clear-chrome" type="button" class="subtle">清除全部</button>
+            </div>
           </fieldset>
           <fieldset>
             <legend>Visual Studio Code</legend>

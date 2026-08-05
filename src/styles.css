@@ -19,7 +19,7 @@ html, body {
 #bar {
   position: relative;
   width: 100%;
-  height: 80px;
+  height: 120px;
   background: rgba(28, 28, 30, 0.82);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
@@ -93,7 +93,7 @@ html, body {
 #task-container {
   display: flex;
   gap: 8px;
-  padding: 8px 36px 4px 10px;
+  padding: 9px 36px 6px 10px;
   overflow-x: auto;
   overflow-y: hidden;
   flex: 1;
@@ -112,22 +112,36 @@ html, body {
 }
 
 .task-card {
+  --status-color: #8e8e93;
+  --status-bg: rgba(142, 142, 147, 0.08);
   flex: 1;
-  min-width: 140px;
-  max-width: 220px;
-  background: rgba(58, 58, 60, 0.6);
-  border-left: 3px solid;
-  border-radius: 8px;
-  padding: 6px 8px;
+  min-width: 180px;
+  max-width: 260px;
+  min-height: 76px;
+  background: var(--status-bg);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 3px solid var(--status-color);
+  border-radius: 9px;
+  padding: 7px 9px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.12s;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .task-card:hover {
-  background: rgba(72, 72, 74, 0.8);
+  background: linear-gradient(rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.11)), var(--status-bg);
+  border-color: rgba(255, 255, 255, 0.18);
+  border-left-color: var(--status-color);
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.22);
+  transform: translateY(-1px);
+}
+
+.task-card:active,
+.task-card.is-loading {
+  transform: translateY(0) scale(0.985);
+  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.35);
 }
 
 .task-card.stale {
@@ -155,7 +169,8 @@ html, body {
 
 .task-name {
   font-weight: 600;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 18px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -177,22 +192,77 @@ html, body {
 
 .card-tools {
   display: flex;
-  gap: 6px;
-  margin-top: 1px;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  min-height: 25px;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
-.tool-icon {
-  font-size: 12px;
+.card-tools::-webkit-scrollbar {
+  height: 0;
+}
+
+.tool-button {
+  height: 24px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 27px;
+  max-width: 124px;
+  padding: 2px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  color: #d1d1d6;
+  background: rgba(255, 255, 255, 0.06);
+  font: inherit;
+  font-size: 11px;
   cursor: pointer;
-  opacity: 0.6;
-  transition: opacity 0.15s;
-  padding: 1px 2px;
-  border-radius: 4px;
+  opacity: 0.82;
+  transition: opacity 0.12s, background 0.12s, border-color 0.12s, transform 0.08s;
 }
 
-.tool-icon:hover {
+.tool-button:hover {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border-color: rgba(10, 132, 255, 0.65);
+  background: rgba(10, 132, 255, 0.28);
+}
+
+.tool-button:active {
+  transform: scale(0.94);
+  background: rgba(10, 132, 255, 0.42);
+}
+
+.tool-button:disabled {
+  cursor: wait;
+}
+
+.tool-button.is-loading::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: tool-spin 0.7s linear infinite;
+}
+
+.tool-button.is-loading > span:first-child {
+  display: none;
+}
+
+.tool-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes tool-spin {
+  to { transform: rotate(360deg); }
 }
 
 #suggestion {
@@ -284,6 +354,7 @@ html, body {
   color: #e5e5e7;
   padding: 6px 14px;
   border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   font-size: 11px;
   opacity: 0;
   transition: opacity 0.2s;
@@ -298,3 +369,7 @@ html, body {
 #toast.show {
   opacity: 1;
 }
+
+#toast.progress { color: #d9ecff; border-color: rgba(10, 132, 255, 0.55); }
+#toast.success { color: #c7f9d4; border-color: rgba(48, 209, 88, 0.55); }
+#toast.error { color: #ffd0cc; border-color: rgba(255, 69, 58, 0.55); }

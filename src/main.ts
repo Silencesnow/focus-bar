@@ -8,6 +8,7 @@ import {
 } from "@tauri-apps/api/window";
 import { fetchAll, startWatcher } from "./cmux";
 import { jumpSmart, jumpToChrome, jumpToCmux, jumpToVscode } from "./jump";
+import { chromeTargetsFromTask } from "./navigation-config";
 import { ensureTaskForCmux, readFocusData, writeFocusData } from "./store";
 import type {
   CmuxSourceErrorCode,
@@ -19,7 +20,7 @@ import { STATUS_META } from "./types";
 import { mergeWorkspaceTasks, sourceMessage } from "./view-model";
 
 const BAR_WIDTH = 600;
-const BAR_HEIGHT = 80;
+const BAR_HEIGHT = 120;
 const MENU_HEIGHT = 340;
 
 let mergedTasks: MergedTask[] = [];
@@ -145,17 +146,26 @@ function renderCard(task: MergedTask, index: number): string {
   const meta = STATUS_META[task.effectiveStatus];
   const folderName = task.directory ? task.directory.split("/").pop() || "" : "";
   const ports = task.ports.length > 0 ? `:${task.ports.join(", :")}` : "";
-  const toolIcons: string[] = ['<span class="tool-icon" data-tool="cmux" title="跳转 cmux">📟</span>'];
-  if (task.config.vscode) toolIcons.push('<span class="tool-icon" data-tool="vscode" title="跳转 VS Code">📝</span>');
-  if (task.config.chrome || task.ports.length > 0) {
-    toolIcons.push('<span class="tool-icon" data-tool="chrome" title="跳转浏览器">🌐</span>');
+  const chromeTargets = chromeTargetsFromTask(task.config);
+  const toolIcons: string[] = [
+    '<button type="button" class="tool-button icon-only" data-tool="cmux" title="跳转 cmux" aria-label="跳转 cmux">📟</button>',
+  ];
+  if (task.config.vscode) {
+    toolIcons.push('<button type="button" class="tool-button icon-only" data-tool="vscode" title="跳转 VS Code" aria-label="跳转 VS Code">📝</button>');
+  }
+  for (const [targetIndex, target] of chromeTargets.entries()) {
+    const label = escapeHtml(target.label || `链接 ${targetIndex + 1}`);
+    toolIcons.push(`<button type="button" class="tool-button chrome-target" data-tool="chrome" data-target-index="${targetIndex}" title="打开 ${label}"><span aria-hidden="true">🌐</span><span class="tool-label">${label}</span></button>`);
+  }
+  if (chromeTargets.length === 0 && task.ports.length > 0) {
+    toolIcons.push(`<button type="button" class="tool-button chrome-target" data-tool="chrome" title="打开本地预览"><span aria-hidden="true">🌐</span><span class="tool-label">:${task.ports[0]}</span></button>`);
   }
   const note = task.config.note
     ? `<span class="note-badge" title="${escapeHtml(task.config.note)}">📌</span>`
     : "";
   const reason = task.statusReason ? ` title="${escapeHtml(task.statusReason)}"` : "";
   return [
-    `<div class="task-card${stale ? " stale" : ""}" data-index="${index}"${reason} style="border-color:${meta.color};background:${meta.bg}">`,
+    `<div class="task-card${stale ? " stale" : ""}" data-index="${index}"${reason} style="--status-color:${meta.color};--status-bg:${meta.bg}">`,
     '<div class="card-header">',
     `<span class="status-dot">${meta.emoji}</span>`,
     `<span class="task-name">${escapeHtml(task.title)}</span>${note}</div>`,
@@ -195,12 +205,12 @@ function attachCardListeners() {
     if (!card) return;
     const task = mergedTasks[Number(card.getAttribute("data-index") || "0")];
     if (!task) return;
-    const icon = target.closest(".tool-icon");
+    const icon = target.closest<HTMLButtonElement>(".tool-button");
     if (icon) {
       event.stopPropagation();
-      void handleExplicitJump(task, icon.getAttribute("data-tool"));
+      void handleExplicitJump(task, icon);
     } else {
-      void handleSmartJump(task);
+      void handleSmartJump(task, card as HTMLElement);
     }
   };
   container.oncontextmenu = (event) => {
@@ -220,24 +230,51 @@ function attachCardListeners() {
   }
 }
 
-async function handleSmartJump(task: MergedTask) {
+async function handleSmartJump(task: MergedTask, trigger?: HTMLElement) {
+  setJumpBusy(trigger, true);
+  showToast(`正在跳转“${task.title}”…`, "progress");
   try {
     await jumpSmart(task);
+    showToast(`已跳转到“${task.title}”`, "success");
     await refresh();
   } catch (error) {
-    showToast(formatError(error));
+    showToast(formatError(error), "error");
+  } finally {
+    setJumpBusy(trigger, false);
   }
 }
 
-async function handleExplicitJump(task: MergedTask, tool: string | null) {
+async function handleExplicitJump(task: MergedTask, trigger: HTMLButtonElement) {
+  const tool = trigger.dataset.tool || "";
+  const targetIndex = trigger.dataset.targetIndex === undefined
+    ? undefined
+    : Number(trigger.dataset.targetIndex);
+  const chromeTarget = typeof targetIndex === "number"
+    ? chromeTargetsFromTask(task.config)[targetIndex]
+    : undefined;
+  const label = tool === "chrome"
+    ? chromeTarget?.label || "本地预览"
+    : tool === "vscode" ? "VS Code" : "cmux";
+  setJumpBusy(trigger, true);
+  showToast(`正在打开“${label}”…`, "progress");
   try {
     if (tool === "cmux") await jumpToCmux(task);
     if (tool === "vscode") await jumpToVscode(task);
-    if (tool === "chrome") await jumpToChrome(task);
+    if (tool === "chrome") await jumpToChrome(task, chromeTarget, targetIndex);
+    showToast(`已打开“${label}”`, "success");
     await refresh();
   } catch (error) {
-    showToast(formatError(error));
+    showToast(formatError(error), "error");
+  } finally {
+    setJumpBusy(trigger, false);
   }
+}
+
+function setJumpBusy(element: HTMLElement | undefined, busy: boolean) {
+  if (!element) return;
+  element.classList.toggle("is-loading", busy);
+  element.setAttribute("aria-busy", String(busy));
+  if (element instanceof HTMLButtonElement) element.disabled = busy;
 }
 
 function formatError(error: unknown): string {
@@ -248,13 +285,15 @@ function formatError(error: unknown): string {
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
-function showToast(message: string) {
+function showToast(message: string, kind: "" | "progress" | "success" | "error" = "") {
   const toast = document.getElementById("toast");
   if (!toast) return;
   toast.textContent = message;
-  toast.classList.add("show");
+  toast.className = `show${kind ? ` ${kind}` : ""}`;
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove("show"), 3000);
+  if (kind !== "progress") {
+    toastTimer = setTimeout(() => toast.classList.remove("show"), 3000);
+  }
 }
 
 async function showContextMenu(task: MergedTask, x: number, y: number) {

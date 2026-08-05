@@ -7,7 +7,7 @@ import type {
 
 export interface NavigationForm {
   name: string;
-  chromeUrl: string;
+  chromeTargets: ChromeTarget[];
   vscodeWorkspaceName: string;
   vscodeWorkspace: string;
   vscodeFile: string;
@@ -16,7 +16,7 @@ export interface NavigationForm {
 
 export interface NormalizedNavigation {
   name: string;
-  chrome: ChromeTarget | null;
+  chrome: ChromeTarget[] | null;
   vscode: VscodeTarget | null;
 }
 
@@ -28,10 +28,27 @@ function hasEscapingSegment(path: string): boolean {
   return path.split("/").some((segment) => segment === "..");
 }
 
+function chromeLabel(url: string, index: number): string {
+  try {
+    return new URL(url).hostname || `链接 ${index + 1}`;
+  } catch {
+    return `链接 ${index + 1}`;
+  }
+}
+
+export function chromeTargetsFromTask(task: TaskConfig): ChromeTarget[] {
+  if (!task.chrome) return [];
+  const targets = Array.isArray(task.chrome) ? task.chrome : [task.chrome];
+  return targets.map((target, index) => ({
+    label: target.label?.trim() || chromeLabel(target.url, index),
+    url: target.url,
+  }));
+}
+
 export function formFromTask(task: TaskConfig): NavigationForm {
   return {
     name: task.name || "",
-    chromeUrl: task.chrome?.url || "",
+    chromeTargets: chromeTargetsFromTask(task),
     vscodeWorkspaceName: task.vscode?.workspace_name || "",
     vscodeWorkspace: task.vscode?.workspace || "",
     vscodeFile: task.vscode?.file || "",
@@ -41,7 +58,15 @@ export function formFromTask(task: TaskConfig): NavigationForm {
 
 export function normalizeNavigationForm(form: NavigationForm): NormalizedNavigation {
   const name = form.name.trim();
-  const chromeUrl = form.chromeUrl.trim();
+  const chrome = form.chromeTargets
+    .map((target, index) => {
+      const url = target.url.trim();
+      return {
+        label: target.label?.trim() || chromeLabel(url, index),
+        url,
+      };
+    })
+    .filter((target) => target.url);
   const workspace = form.vscodeWorkspace.trim();
   const workspaceName = form.vscodeWorkspaceName.trim();
   const file = form.vscodeFile.trim();
@@ -49,7 +74,7 @@ export function normalizeNavigationForm(form: NavigationForm): NormalizedNavigat
 
   return {
     name,
-    chrome: chromeUrl ? { url: chromeUrl } : null,
+    chrome: chrome.length ? chrome : null,
     vscode: workspace
       ? {
           workspace,
@@ -63,15 +88,20 @@ export function normalizeNavigationForm(form: NavigationForm): NormalizedNavigat
 
 export function validateNavigationForm(form: NavigationForm): string[] {
   const errors: string[] = [];
-  const chromeUrl = form.chromeUrl.trim();
-  if (chromeUrl) {
+  form.chromeTargets.forEach((target, index) => {
+    const urlValue = target.url.trim();
+    const label = target.label?.trim() || `Chrome 链接 ${index + 1}`;
+    if (!urlValue) {
+      if (target.label?.trim()) errors.push(`“${label}”缺少 URL`);
+      return;
+    }
     try {
-      const url = new URL(chromeUrl);
+      const url = new URL(urlValue);
       if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.host) throw new Error();
     } catch {
-      errors.push("Chrome 链接必须是有效的 http 或 https URL");
+      errors.push(`“${label}”必须是有效的 http 或 https URL`);
     }
-  }
+  });
 
   const workspace = form.vscodeWorkspace.trim();
   const file = form.vscodeFile.trim();

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { MergedTask } from "./types";
+import { chromeTargetsFromTask } from "./navigation-config";
+import type { ChromeTarget, MergedTask } from "./types";
 import { focusWorkspace } from "./cmux";
 
 export async function jumpToCmux(task: MergedTask): Promise<void> {
@@ -21,8 +22,18 @@ export async function jumpToVscode(task: MergedTask): Promise<void> {
   });
 }
 
-export async function jumpToChrome(task: MergedTask): Promise<void> {
-  const url = task.config.chrome?.url || guessUrlFromPorts(task);
+export function resolveChromeUrl(task: MergedTask, targetIndex?: number): string | null {
+  const targets = chromeTargetsFromTask(task.config);
+  if (typeof targetIndex === "number") return targets[targetIndex]?.url || null;
+  return targets[0]?.url || guessUrlFromPorts(task);
+}
+
+export async function jumpToChrome(
+  task: MergedTask,
+  target?: ChromeTarget,
+  targetIndex?: number,
+): Promise<void> {
+  const url = target?.url || resolveChromeUrl(task, targetIndex);
   if (!url) throw new Error("No Chrome URL for this task");
 
   await invoke("focus_chrome_url", { url });

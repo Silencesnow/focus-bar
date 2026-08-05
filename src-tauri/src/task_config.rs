@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChromeInput {
+    pub label: Option<String>,
     pub url: String,
 }
 
@@ -26,11 +27,13 @@ fn config_error(message: impl Into<String>, detail: Option<String>) -> Navigatio
 }
 
 fn validate_inputs(
-    chrome: &Option<ChromeInput>,
+    chrome: &Option<Vec<ChromeInput>>,
     vscode: &Option<VscodeInput>,
 ) -> Result<(), NavigationError> {
     if let Some(chrome) = chrome {
-        validate_http_url(chrome.url.trim())?;
+        for target in chrome {
+            validate_http_url(target.url.trim())?;
+        }
     }
     if let Some(vscode) = vscode {
         vscode_goto_target(
@@ -46,7 +49,7 @@ fn merge_task_navigation(
     data: &mut Value,
     task_id: &str,
     name: &str,
-    chrome: Option<ChromeInput>,
+    chrome: Option<Vec<ChromeInput>>,
     vscode: Option<VscodeInput>,
 ) -> Result<Value, NavigationError> {
     validate_inputs(&chrome, &vscode)?;
@@ -74,11 +77,17 @@ fn merge_task_navigation(
 
     task.insert("name".into(), Value::String(name.trim().to_string()));
     match chrome {
-        Some(mut chrome) => {
-            chrome.url = chrome.url.trim().to_string();
+        Some(mut chrome) if !chrome.is_empty() => {
+            for target in &mut chrome {
+                target.url = target.url.trim().to_string();
+                target.label = target.label.take().and_then(|label| {
+                    let trimmed = label.trim().to_string();
+                    (!trimmed.is_empty()).then_some(trimmed)
+                });
+            }
             task.insert("chrome".into(), serde_json::to_value(chrome).unwrap());
         }
-        None => {
+        Some(_) | None => {
             task.remove("chrome");
         }
     }
@@ -112,7 +121,7 @@ pub fn save_task_navigation(
     app: AppHandle,
     task_id: String,
     name: String,
-    chrome: Option<ChromeInput>,
+    chrome: Option<Vec<ChromeInput>>,
     vscode: Option<VscodeInput>,
 ) -> Result<Value, NavigationError> {
     let home = dirs::home_dir().ok_or_else(|| config_error("Cannot find home directory", None))?;
@@ -159,7 +168,16 @@ mod tests {
             &mut data,
             "task-1",
             "New",
-            Some(ChromeInput { url: "https://example.com".into() }),
+            Some(vec![
+                ChromeInput {
+                    label: Some(" Web MR ".into()),
+                    url: " https://example.com/web ".into(),
+                },
+                ChromeInput {
+                    label: Some("API MR".into()),
+                    url: "https://example.com/api".into(),
+                },
+            ]),
             Some(VscodeInput {
                 workspace: "/tmp/app".into(), workspace_name: "app".into(),
                 file: Some("src/main.ts".into()), line: Some(12),
@@ -168,7 +186,9 @@ mod tests {
         assert_eq!(updated["name"], "New");
         assert_eq!(updated["note"], "keep me");
         assert_eq!(updated["unknown"], 7);
-        assert_eq!(updated["chrome"]["url"], "https://example.com");
+        assert_eq!(updated["chrome"][0]["label"], "Web MR");
+        assert_eq!(updated["chrome"][0]["url"], "https://example.com/web");
+        assert_eq!(updated["chrome"][1]["label"], "API MR");
         assert_eq!(updated["vscode"]["workspace_name"], "app");
     }
 
