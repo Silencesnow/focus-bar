@@ -11,6 +11,24 @@ Focus Bar 是一个 macOS 本地注意力提示条。当前 MVP 只连接 cmux�
 
 右键任务可以临时覆盖状态；选择“自动判断”会恢复自动状态。界面只显示当前打开的 cmux workspace，`~/.focus.json` 中的历史记录不会被删除。
 
+## Chrome 与 VS Code 跳转配置
+
+点击提示条右上角的 `⚙️`，或右键任务选择“配置跳转目标”。配置窗口会列出当前 cmux workspace：
+
+- Chrome 完整 URL：优先在所有 Chrome 窗口中精确匹配已有 tab；找不到时打开新 tab。
+- VS Code workspace 名称：用于匹配当前已打开窗口，可留空并从目录名推断。
+- VS Code workspace 目录：必填绝对路径。
+- 文件与行号：可选，文件路径相对于 workspace。
+
+配置窗口可以在保存前分别测试 Chrome 和 VS Code。保存后，提示条会立即出现 `🌐` 和 `📝` 图标，不需要等待轮询。
+
+首次使用时 macOS 可能请求权限：
+
+- Chrome 需要“系统设置 → 隐私与安全性 → 自动化”中的 Google Chrome 控制权限。
+- VS Code 已打开窗口的精确聚焦需要“系统设置 → 隐私与安全性 → 辅助功能”权限。
+
+Focus Bar 只把 URL 和路径作为独立进程参数传递，不会拼接到 AppleScript 源码或 shell 命令中。
+
 ## 前置条件
 
 1. macOS 14 或更高版本。

@@ -1,4 +1,5 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   currentMonitor,
   getCurrentWindow,
@@ -274,6 +275,7 @@ async function showContextMenu(task: MergedTask, x: number, y: number) {
   }
   html += '<div class="ctx-item" data-action="auto">🔄 自动判断</div>';
   html += '<div class="ctx-divider"></div><div class="ctx-item" data-action="note">📌 记录断点</div>';
+  html += '<div class="ctx-item" data-action="configure">⚙️ 配置跳转目标</div>';
   menu.innerHTML = html;
   menu.style.left = `${Math.min(x, BAR_WIDTH - 190)}px`;
   menu.style.top = `${Math.max(y, BAR_HEIGHT - 8)}px`;
@@ -292,6 +294,12 @@ async function closeContextMenu() {
 
 async function handleContextAction(action: string | null, value: string | null) {
   if (!contextMenuTask) return;
+  if (action === "configure") {
+    const taskId = contextMenuTask.config.id;
+    await closeContextMenu();
+    await openSettings(taskId);
+    return;
+  }
   const data = await readFocusData();
   const config = data.tasks.find((task) => task.id === contextMenuTask?.config.id);
   if (config && action === "status" && value) {
@@ -333,8 +341,20 @@ async function startEventRefresh() {
       }
     },
   ));
+  unlisteners.push(await listen("focus-config-changed", () => void refresh()));
   await startWatcher();
   fallbackTimer = setInterval(() => void refresh(), 30_000);
+}
+
+async function openSettings(taskId?: string) {
+  const settings = await WebviewWindow.getByLabel("settings");
+  if (!settings) {
+    showToast("配置窗口不可用");
+    return;
+  }
+  await settings.show();
+  await settings.setFocus();
+  await emitTo("settings", "open-settings-for-task", { taskId: taskId || null });
 }
 
 async function startDrag(event: MouseEvent) {
@@ -347,6 +367,7 @@ async function main() {
   await positionWindowTopCenter();
   await refresh();
   await startEventRefresh();
+  document.getElementById("settings-button")?.addEventListener("click", () => void openSettings());
   document.getElementById("bar")?.addEventListener("mousedown", (event) => void startDrag(event));
   document.addEventListener("click", (event) => {
     const menu = document.getElementById("context-menu");
