@@ -106,6 +106,26 @@ describe("mergeWorkspaceTasks", () => {
     expect(task.activitySummary).toBe("Waiting for input");
     expect(task.activityAt).toBeNull();
   });
+
+  test("uses the running surface title when workspace submission metadata is missing", () => {
+    const current = workspace("current-id", "Current");
+    current.active_surface_title = "⠐ 支持yarn serve命令动态配置端口";
+    const notification: CmuxNotification = {
+      id: "n1", workspace_id: "current-id", title: "Claude Code",
+      subtitle: "", body: "Claude is waiting for your input", is_read: true,
+      created_at: "2026-07-14T06:39:21Z", tab_title: "ling-design-B",
+    };
+
+    const task = mergeWorkspaceTasks(
+      [current],
+      [notification],
+      [config("current-id", "Current")],
+    )[0];
+
+    expect(task.effectiveStatus).toBe("executing");
+    expect(task.activitySummary).toBe("支持yarn serve命令动态配置端口");
+    expect(task.activityAt).toBeNull();
+  });
 });
 
 test("formats relative activity time without throwing on invalid input", () => {

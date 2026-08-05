@@ -6,10 +6,17 @@ export interface StatusInput {
   manualStatus: unknown;
   notifications: CmuxNotification[];
   latestSubmittedAt: string | null;
+  activeSurfaceTitle?: string | null;
 }
 
 const ACTION_PATTERN = /\b(waiting|input required|needs? input|blocked|error|failed|failure)\b/i;
 const REVIEW_PATTERN = /\b(completed|done|success|succeeded|finished)\b/i;
+const RUNNING_SURFACE_PATTERN = /^[\u2800-\u28ff](?:\s+|$)/u;
+
+export function runningSurfaceSummary(value: string | null | undefined): string | null {
+  if (!value || !RUNNING_SURFACE_PATTERN.test(value)) return null;
+  return value.replace(RUNNING_SURFACE_PATTERN, "").trim() || null;
+}
 
 function notificationText(notification: CmuxNotification): string {
   return [notification.title, notification.subtitle, notification.body]
@@ -58,6 +65,7 @@ export function deriveTaskStatus(input: StatusInput): AttentionStatus {
 
   if (newestMatchingUnread(input.notifications, ACTION_PATTERN)) return "needs_action";
   if (newestMatchingUnread(input.notifications, REVIEW_PATTERN)) return "needs_review";
+  if (runningSurfaceSummary(input.activeSurfaceTitle)) return "executing";
 
   const newestTerminalAt = input.notifications.reduce((latest, item) => {
     const text = notificationText(item);

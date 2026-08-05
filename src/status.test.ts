@@ -52,6 +52,17 @@ describe("deriveTaskStatus", () => {
     })).toBe("executing");
   });
 
+  test("a spinning selected surface is executing when cmux omits submission metadata", () => {
+    const input = {
+      manualStatus: null,
+      latestSubmittedAt: null,
+      activeSurfaceTitle: "⠂ 支持yarn serve命令动态配置端口",
+      notifications: [notification({ subtitle: "Waiting", is_read: true })],
+    } as Parameters<typeof deriveTaskStatus>[0];
+
+    expect(deriveTaskStatus(input)).toBe("executing");
+  });
+
   test("a terminal notification after the latest submission is idle once read", () => {
     expect(deriveTaskStatus({
       manualStatus: null,

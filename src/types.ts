@@ -59,6 +59,7 @@ export interface CmuxWorkspace {
   listening_ports: number[];
   latest_conversation_message: string | null;
   latest_submitted_at: string | null;
+  active_surface_title?: string | null;
   selected: boolean;
   index: number;
   window_id: string;

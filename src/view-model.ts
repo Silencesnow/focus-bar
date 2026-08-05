@@ -1,4 +1,4 @@
-import { deriveTaskStatus, statusReason } from "./status";
+import { deriveTaskStatus, runningSurfaceSummary, statusReason } from "./status";
 import type {
   CmuxNotification,
   CmuxSourceState,
@@ -41,9 +41,11 @@ function activitySummary(
   workspace: CmuxWorkspace,
   notifications: CmuxNotification[],
   reason: string | null,
+  surfaceSummary: string | null,
 ): string | null {
   const message = workspace.latest_conversation_message?.trim();
   if (message) return message;
+  if (surfaceSummary) return surfaceSummary;
   const notification = notifications[0];
   return notification?.subtitle.trim()
     || notification?.body.trim()
@@ -80,8 +82,10 @@ export function mergeWorkspaceTasks(
       manualStatus: config.manual_status,
       notifications: workspaceNotifications,
       latestSubmittedAt: workspace.latest_submitted_at,
+      activeSurfaceTitle: workspace.active_surface_title,
     };
     const reason = statusReason(input);
+    const surfaceSummary = runningSurfaceSummary(workspace.active_surface_title);
     return {
       config,
       cmux: workspace,
@@ -94,11 +98,18 @@ export function mergeWorkspaceTasks(
       title: taskDisplayName(workspace, config),
       latestMessage: workspace.latest_conversation_message,
       statusReason: reason,
-      activitySummary: activitySummary(workspace, workspaceNotifications, reason),
-      activityAt: latestValidTimestamp([
-        workspace.latest_submitted_at,
-        ...workspaceNotifications.map((notification) => notification.created_at),
-      ]),
+      activitySummary: activitySummary(
+        workspace,
+        workspaceNotifications,
+        reason,
+        surfaceSummary,
+      ),
+      activityAt: surfaceSummary && !workspace.latest_submitted_at
+        ? null
+        : latestValidTimestamp([
+            workspace.latest_submitted_at,
+            ...workspaceNotifications.map((notification) => notification.created_at),
+          ]),
     };
   });
 }

@@ -188,6 +188,22 @@ fn parse_json(raw: &str) -> Result<Value, CmuxError> {
     })
 }
 
+fn selected_surface_title(response: &Value) -> Option<String> {
+    response
+        .get("surfaces")?
+        .as_array()?
+        .iter()
+        .find(|surface| {
+            surface.get("selected").and_then(Value::as_bool) == Some(true)
+                && surface.get("type").and_then(Value::as_str) == Some("terminal")
+        })?
+        .get("title")?
+        .as_str()
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
+        .map(str::to_string)
+}
+
 async fn run_cmux(
     context: &RuntimeContext,
     args: &[String],
@@ -225,6 +241,24 @@ async fn run_cmux(
             Some(detail),
         ))
     }
+}
+
+async fn active_surface_title(context: &RuntimeContext, workspace_id: &str) -> Option<String> {
+    let raw = run_cmux(
+        context,
+        &[
+            "list-pane-surfaces".into(),
+            "--workspace".into(),
+            workspace_id.into(),
+            "--json".into(),
+            "--id-format".into(),
+            "both".into(),
+        ],
+        COMMAND_TIMEOUT,
+    )
+    .await
+    .ok()?;
+    selected_surface_title(&parse_json(&raw).ok()?)
 }
 
 fn error_snapshot(error: CmuxError) -> CmuxSnapshot {
@@ -303,8 +337,23 @@ async fn fetch_snapshot_result() -> Result<CmuxSnapshot, CmuxError> {
             })?;
         for item in items {
             let mut item = item.clone();
+            let needs_surface_fallback = item.get("latest_submitted_at").is_none_or(Value::is_null);
+            let surface_title = if needs_surface_fallback {
+                match item.get("id").and_then(Value::as_str) {
+                    Some(workspace_id) => active_surface_title(&context, workspace_id).await,
+                    None => None,
+                }
+            } else {
+                None
+            };
             if let Some(object) = item.as_object_mut() {
-                object.insert("window_id".into(), Value::String(resolved_window_id.clone()));
+                object.insert(
+                    "window_id".into(),
+                    Value::String(resolved_window_id.clone()),
+                );
+                if let Some(title) = surface_title {
+                    object.insert("active_surface_title".into(), Value::String(title));
+                }
             }
             workspaces.push(item);
         }
@@ -516,6 +565,21 @@ mod tests {
         assert_eq!(
             parse_json("not-json").unwrap_err().code,
             CmuxErrorCode::InvalidResponse
+        );
+    }
+
+    #[test]
+    fn selected_surface_title_uses_the_selected_terminal() {
+        let response = serde_json::json!({
+            "surfaces": [
+                {"selected": false, "title": "yarn serve", "type": "terminal"},
+                {"selected": true, "title": "⠂ 支持yarn serve命令动态配置端口", "type": "terminal"}
+            ]
+        });
+
+        assert_eq!(
+            selected_surface_title(&response),
+            Some("⠂ 支持yarn serve命令动态配置端口".into())
         );
     }
 
