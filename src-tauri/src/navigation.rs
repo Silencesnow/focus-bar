@@ -102,25 +102,53 @@ async fn discover_chrome_processes() -> Result<Vec<ChromeProcess>, NavigationErr
 }
 
 const CHROME_SCRIPT: &str = r#"
+use framework "Foundation"
+use framework "ScriptingBridge"
+
 on run argv
-  set targetUrl to item 1 of argv
-  tell application "Google Chrome"
-    set found to false
-    repeat with w in windows
-      set tabUrls to URL of every tab of w
-      repeat with i from 1 to count of tabUrls
-        if item i of tabUrls is targetUrl then
-          set active tab index of w to i
-          set index of w to 1
-          set found to true
-          exit repeat
-        end if
-      end repeat
-      if found then exit repeat
+  set targetPid to (item 1 of argv) as integer
+  set targetUrl to item 2 of argv
+  set chromeApp to current application's SBApplication's applicationWithProcessIdentifier:targetPid
+  set chromeWindows to chromeApp's valueForKey:"windows"
+  set windowCount to count of chromeWindows
+
+  if windowCount > 0 then
+    repeat with windowIndex from 0 to (windowCount - 1)
+      set chromeWindow to chromeWindows's objectAtIndex:windowIndex
+      set chromeTabs to chromeWindow's valueForKey:"tabs"
+      set tabUrls to chromeTabs's valueForKey:"URL"
+      set tabCount to count of tabUrls
+      if tabCount > 0 then
+        repeat with tabIndex from 0 to (tabCount - 1)
+          if ((tabUrls's objectAtIndex:tabIndex) as text) is targetUrl then
+            chromeWindow's setValue:(tabIndex + 1) forKey:"activeTabIndex"
+            chromeWindow's setValue:1 forKey:"index"
+            chromeApp's |activate|()
+            return "FOUND"
+          end if
+        end repeat
+      end if
     end repeat
-    if not found then open location targetUrl
-    activate
-  end tell
+  end if
+
+  if windowCount is 0 then
+    set windowClass to chromeApp's classForScriptingClass:"window"
+    set newWindow to windowClass's alloc()'s initWithProperties:(current application's NSDictionary's dictionary())
+    chromeWindows's addObject:newWindow
+    set chromeWindows to chromeApp's valueForKey:"windows"
+  end if
+
+  set targetWindow to chromeWindows's objectAtIndex:0
+  set chromeTabs to targetWindow's valueForKey:"tabs"
+  set tabClass to chromeApp's classForScriptingClass:"tab"
+  set properties to current application's NSDictionary's dictionaryWithObject:targetUrl forKey:"URL"
+  set newTab to tabClass's alloc()'s initWithProperties:properties
+  chromeTabs's addObject:newTab
+  set newTabIndex to count of chromeTabs
+  targetWindow's setValue:newTabIndex forKey:"activeTabIndex"
+  targetWindow's setValue:1 forKey:"index"
+  chromeApp's |activate|()
+  return "OPENED"
 end run
 "#;
 
@@ -195,9 +223,12 @@ pub(crate) fn validate_http_url(value: &str) -> Result<(), NavigationError> {
     Ok(())
 }
 
-fn chrome_command(url: &str) -> Result<ScriptSpec, NavigationError> {
+fn chrome_command(pid: u32, url: &str) -> Result<ScriptSpec, NavigationError> {
     validate_http_url(url)?;
-    Ok(ScriptSpec { script: CHROME_SCRIPT, args: vec![url.to_string()] })
+    Ok(ScriptSpec {
+        script: CHROME_SCRIPT,
+        args: vec![pid.to_string(), url.to_string()],
+    })
 }
 
 fn safe_relative_file(value: &str) -> bool {
@@ -341,9 +372,23 @@ pub async fn focus_chrome_url(url: String) -> Result<(), NavigationError> {
             None,
         ));
     }
-    let spec = chrome_command(&url)?;
+    let processes = discover_chrome_processes().await?;
+    let pid = select_chrome_pid(&processes, &chrome_window_order()).ok_or_else(|| {
+        NavigationError::new(
+            NavigationErrorCode::ChromeNotInstalled,
+            "No ordinary Google Chrome process is running",
+            Some("Remote-debugging Chrome processes are intentionally ignored".into()),
+        )
+    })?;
+    let spec = chrome_command(pid, &url)?;
     let mut command = Command::new("/usr/bin/osascript");
-    command.arg("-e").arg(spec.script).arg("--").args(&spec.args);
+    command
+        .arg("-l")
+        .arg("AppleScript")
+        .arg("-e")
+        .arg(spec.script)
+        .arg("--")
+        .args(&spec.args);
     let output = run_command(&mut command, "Google Chrome automation").await?;
     if output.status.success() {
         return Ok(());
@@ -457,18 +502,49 @@ mod tests {
     }
 
     #[test]
-    fn chrome_url_is_an_argument_not_script_source() {
+    fn chrome_pid_and_url_are_arguments_not_script_source() {
         let hostile = "https://example.com/\"%20&%20do%20shell%20script%20\"bad\"";
-        let spec = chrome_command(hostile).unwrap();
+        let spec = chrome_command(712, hostile).unwrap();
         assert!(!spec.script.contains(hostile));
-        assert_eq!(spec.args.last().unwrap(), hostile);
+        assert_eq!(spec.args, vec!["712", hostile]);
+        assert!(spec.script.contains("applicationWithProcessIdentifier"));
     }
 
     #[test]
     fn chrome_script_reads_tab_urls_once_per_window() {
-        let spec = chrome_command("https://example.com").unwrap();
-        assert!(spec.script.contains("set tabUrls to URL of every tab of w"));
-        assert!(!spec.script.contains("set t to tab i of w"));
+        let spec = chrome_command(712, "https://example.com").unwrap();
+        assert!(spec.script.contains("valueForKey:\"URL\""));
+        assert!(!spec.script.contains("URL of tab"));
+    }
+
+    #[test]
+    fn chrome_script_compiles() {
+        let stem = format!(
+            "focus-bar-chrome-script-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let source_path = std::env::temp_dir().join(format!("{stem}.applescript"));
+        let output_path = std::env::temp_dir().join(format!("{stem}.scpt"));
+        std::fs::write(&source_path, CHROME_SCRIPT).unwrap();
+        let output = std::process::Command::new("/usr/bin/osacompile")
+            .arg("-l")
+            .arg("AppleScript")
+            .arg("-o")
+            .arg(&output_path)
+            .arg(&source_path)
+            .output()
+            .unwrap();
+        let _ = std::fs::remove_file(source_path);
+        let _ = std::fs::remove_file(output_path);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     #[test]
