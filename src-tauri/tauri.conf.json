@@ -24,6 +24,21 @@
         "resizable": false,
         "skipTaskbar": true,
         "shadow": false
+      },
+      {
+        "label": "settings",
+        "title": "Focus Bar Settings",
+        "url": "settings.html",
+        "width": 560,
+        "height": 480,
+        "minWidth": 520,
+        "minHeight": 420,
+        "center": true,
+        "visible": false,
+        "decorations": true,
+        "resizable": true,
+        "transparent": false,
+        "skipTaskbar": false
       }
     ],
     "security": {

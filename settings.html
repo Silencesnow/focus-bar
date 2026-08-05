@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/src/settings.css" />
+    <title>Focus Bar Settings</title>
+    <script type="module" src="/src/settings.ts" defer></script>
+  </head>
+  <body>
+    <main class="settings-shell">
+      <aside class="workspace-pane">
+        <header><h1>任务配置</h1><p>当前 cmux workspace</p></header>
+        <div id="workspace-list" class="workspace-list" role="listbox"></div>
+      </aside>
+      <section class="form-pane">
+        <div id="settings-empty" class="settings-empty">选择一个 workspace</div>
+        <form id="navigation-form" hidden>
+          <label>显示名称<input id="task-name" autocomplete="off" /></label>
+          <fieldset>
+            <legend>Google Chrome</legend>
+            <label>完整 URL<input id="chrome-url" type="url" placeholder="https://example.com/page" /></label>
+            <div class="button-row"><button id="test-chrome" type="button">测试 Chrome</button><button id="clear-chrome" type="button" class="subtle">清除</button></div>
+          </fieldset>
+          <fieldset>
+            <legend>Visual Studio Code</legend>
+            <label>Workspace 名称<input id="vscode-name" placeholder="例如 focus-bar" /></label>
+            <label>Workspace 绝对目录<input id="vscode-workspace" placeholder="/Users/name/project" /></label>
+            <div class="inline-fields">
+              <label>文件（可选）<input id="vscode-file" placeholder="src/main.ts" /></label>
+              <label class="line-field">行号<input id="vscode-line" inputmode="numeric" placeholder="42" /></label>
+            </div>
+            <div class="button-row"><button id="test-vscode" type="button">测试 VS Code</button><button id="clear-vscode" type="button" class="subtle">清除</button></div>
+          </fieldset>
+          <footer>
+            <div id="settings-status" role="status"></div>
+            <button id="save-settings" type="submit" class="primary">保存</button>
+          </footer>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>
