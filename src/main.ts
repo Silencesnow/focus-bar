@@ -25,7 +25,7 @@ import { STATUS_META } from "./types";
 import { mergeWorkspaceTasks, sourceMessage } from "./view-model";
 
 const BAR_WIDTH = 600;
-const BAR_HEIGHT = 120;
+const BAR_HEIGHT = 140;
 const MENU_HEIGHT = 340;
 
 let mergedTasks: MergedTask[] = [];
