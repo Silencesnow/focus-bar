@@ -24,7 +24,7 @@ const config = (id: string, name: string): TaskConfig => ({
 });
 
 describe("mergeWorkspaceTasks", () => {
-  test("renders current workspaces and hides historical configs", () => {
+  test("renders the latest cmux title and hides historical configs", () => {
     const current = workspace("current-id", "Current");
     const tasks = mergeWorkspaceTasks(
       [current],
@@ -32,7 +32,7 @@ describe("mergeWorkspaceTasks", () => {
       [config("current-id", "Renamed"), config("old-id", "Old")],
     );
     expect(tasks).toHaveLength(1);
-    expect(tasks[0].title).toBe("Renamed");
+    expect(tasks[0].title).toBe("Current");
     expect(tasks[0].cmux?.id).toBe("current-id");
   });
 
@@ -49,6 +49,16 @@ describe("mergeWorkspaceTasks", () => {
     );
     expect(tasks[0].effectiveStatus).toBe("needs_action");
     expect(tasks[0].statusReason).toContain("Please answer");
+  });
+
+  test("keeps an explicitly saved display-name override", () => {
+    const current = workspace("current-id", "Current");
+    const pinned = config("current-id", "Pinned");
+    pinned.name_overridden = true;
+
+    const tasks = mergeWorkspaceTasks([current], [], [pinned]);
+
+    expect(tasks[0].title).toBe("Pinned");
   });
 });
 

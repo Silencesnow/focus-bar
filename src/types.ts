@@ -39,6 +39,7 @@ export interface NavigationError {
 export interface TaskConfig {
   id: string;
   name: string;
+  name_overridden?: boolean;
   cmux_workspace_id?: string;
   manual_status?: StoredTaskStatus | null;
   note?: string;

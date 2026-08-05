@@ -49,6 +49,7 @@ fn merge_task_navigation(
     data: &mut Value,
     task_id: &str,
     name: &str,
+    name_overridden: bool,
     chrome: Option<Vec<ChromeInput>>,
     vscode: Option<VscodeInput>,
 ) -> Result<Value, NavigationError> {
@@ -76,6 +77,7 @@ fn merge_task_navigation(
         })?;
 
     task.insert("name".into(), Value::String(name.trim().to_string()));
+    task.insert("name_overridden".into(), Value::Bool(name_overridden));
     match chrome {
         Some(mut chrome) if !chrome.is_empty() => {
             for target in &mut chrome {
@@ -121,35 +123,45 @@ pub fn save_task_navigation(
     app: AppHandle,
     task_id: String,
     name: String,
+    name_overridden: bool,
     chrome: Option<Vec<ChromeInput>>,
     vscode: Option<VscodeInput>,
 ) -> Result<Value, NavigationError> {
     let home = dirs::home_dir().ok_or_else(|| config_error("Cannot find home directory", None))?;
     let path = home.join(".focus.json");
-    let raw = std::fs::read_to_string(&path).map_err(|error| {
-        config_error("Could not read ~/.focus.json", Some(error.to_string()))
-    })?;
-    let mut data: Value = serde_json::from_str(&raw).map_err(|error| {
-        config_error("Could not parse ~/.focus.json", Some(error.to_string()))
-    })?;
-    let updated = merge_task_navigation(&mut data, &task_id, &name, chrome, vscode)?;
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|error| config_error("Could not read ~/.focus.json", Some(error.to_string())))?;
+    let mut data: Value = serde_json::from_str(&raw)
+        .map_err(|error| config_error("Could not parse ~/.focus.json", Some(error.to_string())))?;
+    let updated =
+        merge_task_navigation(&mut data, &task_id, &name, name_overridden, chrome, vscode)?;
     let temp_path = path.with_extension("json.tmp");
-    let content = serde_json::to_vec_pretty(&data).map_err(|error| {
-        config_error("Could not encode focus data", Some(error.to_string()))
-    })?;
+    let content = serde_json::to_vec_pretty(&data)
+        .map_err(|error| config_error("Could not encode focus data", Some(error.to_string())))?;
     let mut file = File::create(&temp_path).map_err(|error| {
-        config_error("Could not create temporary focus data", Some(error.to_string()))
+        config_error(
+            "Could not create temporary focus data",
+            Some(error.to_string()),
+        )
     })?;
     file.write_all(&content).map_err(|error| {
-        config_error("Could not write temporary focus data", Some(error.to_string()))
+        config_error(
+            "Could not write temporary focus data",
+            Some(error.to_string()),
+        )
     })?;
     file.sync_all().map_err(|error| {
-        config_error("Could not sync temporary focus data", Some(error.to_string()))
+        config_error(
+            "Could not sync temporary focus data",
+            Some(error.to_string()),
+        )
     })?;
-    std::fs::rename(&temp_path, &path).map_err(|error| {
-        config_error("Could not replace focus data", Some(error.to_string()))
-    })?;
-    let _ = app.emit("focus-config-changed", serde_json::json!({ "task_id": task_id }));
+    std::fs::rename(&temp_path, &path)
+        .map_err(|error| config_error("Could not replace focus data", Some(error.to_string())))?;
+    let _ = app.emit(
+        "focus-config-changed",
+        serde_json::json!({ "task_id": task_id }),
+    );
     Ok(updated)
 }
 
@@ -168,6 +180,7 @@ mod tests {
             &mut data,
             "task-1",
             "New",
+            true,
             Some(vec![
                 ChromeInput {
                     label: Some(" Web MR ".into()),
@@ -179,11 +192,15 @@ mod tests {
                 },
             ]),
             Some(VscodeInput {
-                workspace: "/tmp/app".into(), workspace_name: "app".into(),
-                file: Some("src/main.ts".into()), line: Some(12),
+                workspace: "/tmp/app".into(),
+                workspace_name: "app".into(),
+                file: Some("src/main.ts".into()),
+                line: Some(12),
             }),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(updated["name"], "New");
+        assert_eq!(updated["name_overridden"], true);
         assert_eq!(updated["note"], "keep me");
         assert_eq!(updated["unknown"], 7);
         assert_eq!(updated["chrome"][0]["label"], "Web MR");
@@ -199,7 +216,7 @@ mod tests {
             "chrome": {"url": "https://old.example"},
             "vscode": {"workspace": "/tmp/old"}
         }]});
-        let updated = merge_task_navigation(&mut data, "task-1", "Old", None, None).unwrap();
+        let updated = merge_task_navigation(&mut data, "task-1", "Old", false, None, None).unwrap();
         assert!(updated.get("chrome").is_none());
         assert!(updated.get("vscode").is_none());
     }
@@ -208,7 +225,9 @@ mod tests {
     fn missing_task_is_an_invalid_target() {
         let mut data = json!({"tasks": []});
         assert_eq!(
-            merge_task_navigation(&mut data, "missing", "Name", None, None).unwrap_err().code,
+            merge_task_navigation(&mut data, "missing", "Name", false, None, None)
+                .unwrap_err()
+                .code,
             NavigationErrorCode::InvalidTarget
         );
     }

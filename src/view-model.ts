@@ -11,10 +11,19 @@ function fallbackConfig(workspace: CmuxWorkspace): TaskConfig {
   return {
     id: workspace.id.slice(0, 8),
     name: workspace.title || workspace.current_directory.split("/").pop() || "Unnamed",
+    name_overridden: false,
     cmux_workspace_id: workspace.id,
     manual_status: null,
     note: "",
   };
+}
+
+export function taskDisplayName(workspace: CmuxWorkspace, config: TaskConfig): string {
+  if (config.name_overridden && config.name.trim()) return config.name.trim();
+  return workspace.title.trim()
+    || config.name.trim()
+    || workspace.current_directory.split("/").pop()
+    || "Unnamed";
 }
 
 export function mergeWorkspaceTasks(
@@ -42,7 +51,7 @@ export function mergeWorkspaceTasks(
       effectiveStatus: deriveTaskStatus(input),
       ports: workspace.listening_ports || [],
       directory: workspace.current_directory,
-      title: config.name || workspace.title,
+      title: taskDisplayName(workspace, config),
       latestMessage: workspace.latest_conversation_message,
       statusReason: statusReason(input),
     };

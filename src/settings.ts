@@ -12,7 +12,7 @@ import {
 } from "./navigation-config";
 import { ensureTaskForCmux, readFocusData } from "./store";
 import type { ChromeTarget, CmuxWorkspace, NavigationError, TaskConfig } from "./types";
-import { sourceMessage } from "./view-model";
+import { sourceMessage, taskDisplayName } from "./view-model";
 
 interface SettingsTask { workspace: CmuxWorkspace; config: TaskConfig }
 
@@ -81,7 +81,7 @@ function renderTaskList() {
   const list = document.getElementById("workspace-list")!;
   list.innerHTML = tasks.map(({ workspace, config }) => `
     <button type="button" class="workspace-item${config.id === selectedTaskId ? " selected" : ""}" data-task-id="${config.id}" role="option">
-      <span class="workspace-title">${escapeHtml(config.name || workspace.title)}</span>
+      <span class="workspace-title">${escapeHtml(taskDisplayName(workspace, config))}</span>
       <span class="workspace-dir">${escapeHtml(workspace.current_directory)}</span>
     </button>`).join("");
   list.querySelectorAll<HTMLButtonElement>(".workspace-item").forEach((button) => {
@@ -101,7 +101,10 @@ async function selectTask(taskId: string) {
   selectedTaskId = taskId;
   document.getElementById("settings-empty")!.hidden = true;
   document.getElementById("navigation-form")!.hidden = false;
-  setForm(formFromTask(task.config));
+  setForm(formFromTask({
+    ...task.config,
+    name: taskDisplayName(task.workspace, task.config),
+  }));
   setStatus("");
   renderTaskList();
 }
@@ -131,13 +134,16 @@ async function saveCurrent() {
   const errors = validateNavigationForm(form);
   if (errors.length) { setStatus(errors[0], "error"); return; }
   const normalized = normalizeNavigationForm(form);
+  const task = tasks.find((item) => item.config.id === selectedTaskId);
+  if (!task) return;
+  const nameOverridden = !!normalized.name
+    && normalized.name !== task.workspace.title.trim();
   try {
     const updated = await invoke<TaskConfig>("save_task_navigation", {
-      taskId: selectedTaskId, name: normalized.name,
+      taskId: selectedTaskId, name: normalized.name, nameOverridden,
       chrome: normalized.chrome, vscode: normalized.vscode,
     });
-    const task = tasks.find((item) => item.config.id === selectedTaskId);
-    if (task) task.config = updated;
+    task.config = updated;
     setForm(formFromTask(updated));
     renderTaskList();
     setStatus("已保存", "success");

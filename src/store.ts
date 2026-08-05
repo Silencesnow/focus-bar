@@ -60,6 +60,7 @@ export async function ensureTaskForCmux(
     task = {
       id: workspaceId.slice(0, 8),
       name: workspaceTitle || cwd.split("/").pop() || "Unnamed",
+      name_overridden: false,
       cmux_workspace_id: workspaceId,
       manual_status: null,
       note: "",
