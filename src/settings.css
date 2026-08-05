@@ -1,5 +1,6 @@
 :root { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; color: #1d1d1f; background: #f5f5f7; font-size: 13px; }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; min-width: 520px; min-height: 420px; }
 button, input { font: inherit; }
 .settings-shell { display: grid; grid-template-columns: 200px minmax(0, 1fr); height: 100vh; }

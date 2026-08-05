@@ -11,7 +11,6 @@ import {
   type NavigationForm,
 } from "./navigation-config";
 import { ensureTaskForCmux, readFocusData } from "./store";
-import { resetSettingsViewport } from "./settings-viewport";
 import type { ChromeTarget, CmuxWorkspace, NavigationError, TaskConfig } from "./types";
 import { sourceMessage } from "./view-model";
 
@@ -94,20 +93,8 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function resetFormViewport() {
-  const viewport = document.querySelector<HTMLElement>(".form-pane");
-  if (!viewport) return;
-  const activeElement = document.activeElement instanceof HTMLElement
-    ? document.activeElement
-    : null;
-  resetSettingsViewport(viewport, activeElement);
-}
-
 async function selectTask(taskId: string) {
-  if (taskId === selectedTaskId) {
-    resetFormViewport();
-    return;
-  }
+  if (taskId === selectedTaskId) return;
   if (isDirty() && !confirm("当前修改尚未保存，确定切换任务吗？")) return;
   const task = tasks.find((item) => item.config.id === taskId);
   if (!task) return;
@@ -117,7 +104,6 @@ async function selectTask(taskId: string) {
   setForm(formFromTask(task.config));
   setStatus("");
   renderTaskList();
-  resetFormViewport();
 }
 
 async function loadTasks() {
@@ -232,7 +218,6 @@ async function main() {
   await listen<{ taskId?: string }>("open-settings-for-task", (event) => {
     requestedTaskId = event.payload.taskId || null;
     if (requestedTaskId) void selectTask(requestedTaskId);
-    else resetFormViewport();
   });
   await getCurrentWindow().onCloseRequested(async (event) => {
     event.preventDefault();
