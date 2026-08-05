@@ -147,13 +147,29 @@ end run
 "##;
 
 const VSCODE_SCRIPT: &str = r#"
+on matchesWorkspaceTitle(candidateName, targetName)
+  set paddedCandidate to " — " & candidateName & " — "
+  set targetVariants to {targetName, targetName & " (Workspace)"}
+  repeat with targetVariant in targetVariants
+    if paddedCandidate contains (" — " & (targetVariant as text) & " — ") then return true
+  end repeat
+  return false
+end matchesWorkspaceTitle
+
 on run argv
+  if (count of argv) is 3 then
+    if item 1 of argv is "__FOCUS_BAR_MATCH_TITLE__" then
+      if my matchesWorkspaceTitle(item 2 of argv, item 3 of argv) then return "MATCH"
+      return "NO_MATCH"
+    end if
+  end if
+
   set targetName to item 1 of argv
   tell application "System Events"
     if not (exists process "Code") then return "NOT_FOUND"
     tell process "Code"
       repeat with w in windows
-        if name of w contains targetName then
+        if my matchesWorkspaceTitle(name of w, targetName) then
           set frontmost to true
           perform action "AXRaise" of w
           return "FOUND"
@@ -649,6 +665,48 @@ mod tests {
             output.status.success(),
             "{}",
             String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn vscode_window_lookup_uses_workspace_title_boundaries() {
+        assert!(
+            !VSCODE_SCRIPT.contains("name of w contains targetName"),
+            "substring matching lets ling-design select ling-design-B"
+        );
+    }
+
+    fn run_vscode_title_match(candidate: &str, target: &str) -> String {
+        let output = std::process::Command::new("/usr/bin/osascript")
+            .arg("-e")
+            .arg(VSCODE_SCRIPT)
+            .arg("--")
+            .args(["__FOCUS_BAR_MATCH_TITLE__", candidate, target])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    #[test]
+    fn vscode_workspace_title_match_does_not_confuse_name_prefixes() {
+        assert_eq!(
+            run_vscode_title_match(
+                "page-pool.ts — ling-design-B (Workspace)",
+                "ling-design"
+            ),
+            "NO_MATCH"
+        );
+        assert_eq!(
+            run_vscode_title_match(
+                "2026-07-13-img.md — ling-design (Workspace)",
+                "ling-design"
+            ),
+            "MATCH"
         );
     }
 
