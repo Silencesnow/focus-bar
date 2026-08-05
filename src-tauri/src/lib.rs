@@ -4,6 +4,7 @@ use tokio::process::Command;
 use tokio::time::timeout;
 
 mod cmux_runtime;
+pub mod cmux_config;
 pub mod activity_tracker;
 mod activity_store;
 #[cfg(target_os = "macos")]
@@ -62,6 +63,46 @@ fn home_dir() -> Result<String, String> {
         .ok_or("Cannot find home directory".to_string())
 }
 
+#[derive(serde::Serialize)]
+struct CmuxConfigResult {
+    changed: bool,
+    config_path: String,
+    backup_path: Option<String>,
+}
+
+#[tauri::command]
+fn enable_cmux_socket_access() -> Result<CmuxConfigResult, String> {
+    let path = cmux_config::config_path()?;
+    let existing = if path.exists() {
+        Some(std::fs::read_to_string(&path).map_err(|e| format!("读取 cmux.json 失败: {e}"))?)
+    } else {
+        None
+    };
+    let (serialized, changed) = cmux_config::ensure_allow_all(existing.as_deref())?;
+    if !changed {
+        return Ok(CmuxConfigResult {
+            changed: false,
+            config_path: path.to_string_lossy().to_string(),
+            backup_path: None,
+        });
+    }
+    let mut backup_path = None;
+    if let Some(raw) = existing {
+        let backup = path.with_extension("json.focus-bar.bak");
+        std::fs::write(&backup, raw).map_err(|e| format!("备份 cmux.json 失败: {e}"))?;
+        backup_path = Some(backup.to_string_lossy().to_string());
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建 cmux 配置目录失败: {e}"))?;
+    }
+    std::fs::write(&path, serialized).map_err(|e| format!("写入 cmux.json 失败: {e}"))?;
+    Ok(CmuxConfigResult {
+        changed: true,
+        config_path: path.to_string_lossy().to_string(),
+        backup_path,
+    })
+}
+
 #[tauri::command]
 fn open_activity_stats_window(app: tauri::AppHandle) -> Result<(), String> {
     let window = if let Some(window) = app.get_webview_window("stats") {
@@ -106,6 +147,7 @@ pub fn run() {
             read_home_file,
             write_home_file,
             home_dir,
+            enable_cmux_socket_access,
             open_activity_stats_window,
         ])
         .setup(|app| {

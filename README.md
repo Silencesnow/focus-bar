@@ -65,6 +65,37 @@ Focus Bar 只把 URL 和路径作为独立进程参数传递，不会拼接到 A
 
 修改前先备份配置。修改后按当前 cmux 版本的要求 reload 或重启。Focus Bar 只检查这个条件，不会自动修改 cmux 设置。
 
+如果 Focus Bar 因为该配置未开启而报 `ACCESS_DENIED`，工具条顶部会出现「一键开启 cmux 访问」按钮。点击后 Focus Bar 会先把现有 `~/.config/cmux/cmux.json` 备份到 `cmux.json.focus-bar.bak`，再合并写入 `automation.socketControlMode = "allowAll"`（保留其它字段），然后提示你重启 cmux。除此之外 Focus Bar 不会主动改动 cmux 配置。
+
+## 安装与发布
+
+release 版本以 macOS `.dmg` 分发，可直接安装使用：
+
+```bash
+bun install
+bun run tauri build
+```
+
+产物位于 `src-tauri/target/release/bundle/dmg/focus-bar_<版本>_aarch64.dmg`（Apple Silicon）。
+
+用 GitHub Release 发布：
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+bun run tauri build
+gh release create v0.1.0 \
+  src-tauri/target/release/bundle/dmg/focus-bar_0.1.0_aarch64.dmg \
+  --title "Focus Bar v0.1.0" --notes "首个可用版本"
+```
+
+当前构建使用 ad-hoc 签名（`signingIdentity: "-"`），未经过 Apple 公证。从网络下载的用户首次打开会被 Gatekeeper 拦截，可右键「打开」，或执行：
+
+```bash
+xattr -cr /Applications/focus-bar.app
+```
+
+安装后首次运行时，如果 cmux 尚未开启 socket 访问，点击工具条顶部的「一键开启 cmux 访问」并重启 cmux 即可。
+
 ## 开发
 
 ```bash

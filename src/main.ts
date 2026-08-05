@@ -245,8 +245,46 @@ function renderSourceState() {
   }
   const warning = mergedTasks.length > 0;
   element.className = warning ? "source-warning" : "source-error";
-  element.innerHTML = `<span>${escapeHtml(messages.join(" "))}</span><button id="retry-source" type="button">重试</button>`;
+  const canFixCmux = sourceState?.status === "error" && sourceState.code === "ACCESS_DENIED";
+  const fixButton = canFixCmux
+    ? `<button id="enable-cmux-access" type="button">一键开启 cmux 访问</button>`
+    : "";
+  element.innerHTML = `<span>${escapeHtml(messages.join(" "))}</span>${fixButton}<button id="retry-source" type="button">重试</button>`;
   document.getElementById("retry-source")?.addEventListener("click", () => refresh());
+  document.getElementById("enable-cmux-access")?.addEventListener("click", () => void enableCmuxSocketAccess());
+}
+
+async function enableCmuxSocketAccess() {
+  const button = document.getElementById("enable-cmux-access") as HTMLButtonElement | null;
+  if (button) {
+    button.disabled = true;
+    button.textContent = "写入中…";
+  }
+  try {
+    const result = await invoke<{ changed: boolean; config_path: string; backup_path: string | null }>(
+      "enable_cmux_socket_access",
+    );
+    const backup = result.backup_path ? `，已备份到 ${result.backup_path}` : "";
+    const detail = result.changed
+      ? `已写入 ${result.config_path}${backup}。请重启 cmux 后点击重试。`
+      : `${result.config_path} 已是 allowAll，请重启 cmux 后点击重试。`;
+    const element = document.getElementById("source-status");
+    if (element) {
+      element.className = "source-warning";
+      element.innerHTML = `<span>${escapeHtml(detail)}</span><button id="retry-source" type="button">重试</button>`;
+      document.getElementById("retry-source")?.addEventListener("click", () => refresh());
+    }
+  } catch (error) {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "一键开启 cmux 访问";
+    }
+    const element = document.getElementById("source-status");
+    if (element) {
+      const span = element.querySelector("span");
+      if (span) span.textContent = `写入 cmux 配置失败：${String(error)}`;
+    }
+  }
 }
 
 function renderCard(task: MergedTask): string {
