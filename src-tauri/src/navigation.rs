@@ -15,9 +15,9 @@ on run argv
   tell application "Google Chrome"
     set found to false
     repeat with w in windows
-      repeat with i from 1 to count of tabs of w
-        set t to tab i of w
-        if URL of t is targetUrl then
+      set tabUrls to URL of every tab of w
+      repeat with i from 1 to count of tabUrls
+        if item i of tabUrls is targetUrl then
           set active tab index of w to i
           set index of w to 1
           set found to true
@@ -213,7 +213,16 @@ async fn run_command(
     command: &mut Command,
     label: &str,
 ) -> Result<std::process::Output, NavigationError> {
-    timeout(TARGET_TIMEOUT, command.output())
+    run_command_with_timeout(command, label, TARGET_TIMEOUT).await
+}
+
+async fn run_command_with_timeout(
+    command: &mut Command,
+    label: &str,
+    duration: Duration,
+) -> Result<std::process::Output, NavigationError> {
+    command.kill_on_drop(true);
+    timeout(duration, command.output())
         .await
         .map_err(|_| {
             NavigationError::new(
@@ -331,6 +340,13 @@ mod tests {
     }
 
     #[test]
+    fn chrome_script_reads_tab_urls_once_per_window() {
+        let spec = chrome_command("https://example.com").unwrap();
+        assert!(spec.script.contains("set tabUrls to URL of every tab of w"));
+        assert!(!spec.script.contains("set t to tab i of w"));
+    }
+
+    #[test]
     fn vscode_file_target_includes_line() {
         let target = vscode_goto_target(Path::new("/tmp/app"), Some("src/main.ts"), Some(42))
             .unwrap();
@@ -353,5 +369,46 @@ mod tests {
             classify_automation_failure("Not authorized to send Apple events. (-1743)"),
             NavigationErrorCode::AutomationPermissionRequired
         );
+    }
+
+    #[test]
+    fn timed_out_command_is_terminated() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let nonce = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let pid_path = std::env::temp_dir().join(format!(
+                "focus-bar-timeout-{}-{nonce}.pid",
+                std::process::id()
+            ));
+            let mut command = Command::new("/bin/sh");
+            command.arg("-c").arg(format!(
+                "echo $$ > '{}'; exec /bin/sleep 5",
+                pid_path.display()
+            ));
+
+            let error = run_command_with_timeout(
+                &mut command,
+                "timeout test",
+                Duration::from_millis(200),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.code, NavigationErrorCode::TargetTimeout);
+
+            sleep(Duration::from_millis(100)).await;
+            let pid = std::fs::read_to_string(&pid_path).unwrap();
+            let still_running = std::process::Command::new("/bin/kill")
+                .arg("-0")
+                .arg(pid.trim())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success();
+            let _ = std::fs::remove_file(pid_path);
+            assert!(!still_running, "timed out child process {pid} is still running");
+        });
     }
 }

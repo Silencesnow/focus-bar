@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   formFromTask,
   formsEqual,
+  navigationErrorMessage,
   normalizeNavigationForm,
   validateNavigationForm,
   type NavigationForm,
@@ -99,4 +100,9 @@ test("prefills existing navigation fields", () => {
 test("detects dirty forms after trimming", () => {
   expect(formsEqual(emptyForm(), emptyForm({ name: " Task " }))).toBe(true);
   expect(formsEqual(emptyForm(), emptyForm({ chromeUrl: "https://example.com" }))).toBe(false);
+});
+
+test("timeout guidance mentions a possible permission prompt", () => {
+  expect(navigationErrorMessage({ code: "TARGET_TIMEOUT", message: "timed out" }))
+    .toContain("权限弹窗");
 });

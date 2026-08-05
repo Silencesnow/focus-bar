@@ -102,7 +102,7 @@ export function navigationErrorMessage(error: NavigationError): string {
     case "VSCODE_NOT_INSTALLED": return "找不到官方 VS Code 或 code 命令。";
     case "AUTOMATION_PERMISSION_REQUIRED": return "请在系统设置 → 隐私与安全性 → 自动化中允许 Focus Bar 控制 Google Chrome。";
     case "ACCESSIBILITY_PERMISSION_REQUIRED": return "请在系统设置 → 隐私与安全性 → 辅助功能中允许 Focus Bar 控制 VS Code 窗口。";
-    case "TARGET_TIMEOUT": return "目标应用响应超时。";
+    case "TARGET_TIMEOUT": return "目标应用响应超时；请检查是否有等待处理的 macOS 权限弹窗。";
     case "TARGET_COMMAND_FAILED": return error.message || "跳转目标失败。";
   }
 }
