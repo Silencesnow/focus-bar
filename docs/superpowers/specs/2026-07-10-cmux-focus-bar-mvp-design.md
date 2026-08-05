@@ -118,7 +118,7 @@ Clicking a card performs one cmux jump transaction:
 1. temporarily disable Focus Bar's always-on-top flag;
 2. launch or activate cmux;
 3. focus the recorded cmux window;
-4. select the recorded workspace;
+4. select the recorded workspace by its stable UUID, falling back to the snapshot ref only when no UUID is available;
 5. mark that workspace's notifications read only after selection succeeds; and
 6. restore Focus Bar's always-on-top flag in a `finally` path.
 

@@ -360,8 +360,13 @@ fn jump_commands(workspace_ref: &str, workspace_id: &str, window_id: &str) -> Ve
             args: vec!["focus-window".into(), "--window".into(), window_id.into()],
         });
     }
+    let select_target = if workspace_id.is_empty() {
+        workspace_ref
+    } else {
+        workspace_id
+    };
     commands.push(CliCommandSpec {
-        args: vec!["workspace".into(), "select".into(), workspace_ref.into()],
+        args: vec!["workspace".into(), "select".into(), select_target.into()],
     });
     if !workspace_id.is_empty() {
         commands.push(CliCommandSpec {
@@ -403,12 +408,7 @@ pub async fn focus_cmux_workspace(
         ));
     }
 
-    let select_ref = if workspace_ref.is_empty() {
-        workspace_id.as_str()
-    } else {
-        workspace_ref.as_str()
-    };
-    for command in jump_commands(select_ref, &workspace_id, &window_id) {
+    for command in jump_commands(&workspace_ref, &workspace_id, &window_id) {
         run_cmux(&context, &command.args, COMMAND_TIMEOUT).await?;
     }
     Ok(())
@@ -520,14 +520,20 @@ mod tests {
     }
 
     #[test]
-    fn jump_focuses_window_before_select_and_marks_read_last() {
+    fn jump_prefers_stable_workspace_id_before_marking_read() {
         let commands = jump_commands("workspace:2", "uuid-2", "window:1");
         assert_eq!(commands[0].args, vec!["focus-window", "--window", "window:1"]);
-        assert_eq!(commands[1].args, vec!["workspace", "select", "workspace:2"]);
+        assert_eq!(commands[1].args, vec!["workspace", "select", "uuid-2"]);
         assert_eq!(
             commands[2].args,
             vec!["mark-notification-read", "--workspace", "uuid-2"]
         );
+    }
+
+    #[test]
+    fn jump_falls_back_to_workspace_ref_without_an_id() {
+        let commands = jump_commands("workspace:2", "", "window:1");
+        assert_eq!(commands[1].args, vec!["workspace", "select", "workspace:2"]);
     }
 
     #[test]
