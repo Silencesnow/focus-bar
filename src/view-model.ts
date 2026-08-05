@@ -26,6 +26,45 @@ export function taskDisplayName(workspace: CmuxWorkspace, config: TaskConfig): s
     || "Unnamed";
 }
 
+function latestValidTimestamp(values: Array<string | null | undefined>): string | null {
+  let latest: { value: string; timestamp: number } | null = null;
+  for (const value of values) {
+    if (!value) continue;
+    const timestamp = Date.parse(value);
+    if (!Number.isFinite(timestamp)) continue;
+    if (!latest || timestamp > latest.timestamp) latest = { value, timestamp };
+  }
+  return latest?.value || null;
+}
+
+function activitySummary(
+  workspace: CmuxWorkspace,
+  notifications: CmuxNotification[],
+  reason: string | null,
+): string | null {
+  const message = workspace.latest_conversation_message?.trim();
+  if (message) return message;
+  const notification = notifications[0];
+  return notification?.subtitle.trim()
+    || notification?.body.trim()
+    || notification?.title.trim()
+    || reason?.trim()
+    || null;
+}
+
+export function formatRelativeTime(value: string | null, now = Date.now()): string | null {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return null;
+  const elapsed = Math.max(0, now - timestamp);
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes}分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}小时前`;
+  return `${Math.floor(hours / 24)}天前`;
+}
+
 export function mergeWorkspaceTasks(
   workspaces: CmuxWorkspace[],
   notifications: CmuxNotification[],
@@ -42,6 +81,7 @@ export function mergeWorkspaceTasks(
       notifications: workspaceNotifications,
       latestSubmittedAt: workspace.latest_submitted_at,
     };
+    const reason = statusReason(input);
     return {
       config,
       cmux: workspace,
@@ -53,7 +93,12 @@ export function mergeWorkspaceTasks(
       directory: workspace.current_directory,
       title: taskDisplayName(workspace, config),
       latestMessage: workspace.latest_conversation_message,
-      statusReason: statusReason(input),
+      statusReason: reason,
+      activitySummary: activitySummary(workspace, workspaceNotifications, reason),
+      activityAt: latestValidTimestamp([
+        workspace.latest_submitted_at,
+        ...workspaceNotifications.map((notification) => notification.created_at),
+      ]),
     };
   });
 }

@@ -106,4 +106,6 @@ export interface MergedTask {
   title: string;
   latestMessage: string | null;
   statusReason: string | null;
+  activitySummary: string | null;
+  activityAt: string | null;
 }

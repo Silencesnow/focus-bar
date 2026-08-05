@@ -23,7 +23,7 @@ import type {
   TaskStatus,
 } from "./types";
 import { STATUS_META } from "./types";
-import { mergeWorkspaceTasks, sourceMessage } from "./view-model";
+import { formatRelativeTime, mergeWorkspaceTasks, sourceMessage } from "./view-model";
 
 const BAR_WIDTH = 600;
 const BAR_HEIGHT = 140;
@@ -154,6 +154,11 @@ function renderCard(task: MergedTask, index: number): string {
   const meta = STATUS_META[task.effectiveStatus];
   const folderName = task.directory ? task.directory.split("/").pop() || "" : "";
   const ports = task.ports.length > 0 ? `:${task.ports.join(", :")}` : "";
+  const activityText = [
+    meta.label,
+    task.activitySummary,
+    formatRelativeTime(task.activityAt),
+  ].filter(Boolean).join(" · ");
   const chromeTargets = chromeTargetsFromTask(task.config);
   const toolIcons: string[] = [
     '<button type="button" class="tool-button icon-only" data-tool="cmux" title="跳转 cmux" aria-label="跳转 cmux">📟</button>',
@@ -185,6 +190,7 @@ function renderCard(task: MergedTask, index: number): string {
     `<span class="status-dot">${meta.emoji}</span>`,
     `<span class="task-name">${escapeHtml(task.title)}</span>${note}</div>`,
     `<div class="card-meta">${escapeHtml(folderName)}${ports ? ` ${escapeHtml(ports)}` : ""}</div>`,
+    `<div class="card-activity" title="${escapeHtml(activityText)}">${escapeHtml(activityText)}</div>`,
     `<div class="card-tools">${toolIcons.join("")}</div>`,
     "</div>",
   ].join("");

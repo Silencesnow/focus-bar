@@ -192,6 +192,15 @@ html, body {
   text-overflow: ellipsis;
 }
 
+.card-activity {
+  color: #c7c7cc;
+  font-size: 10px;
+  line-height: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .card-tools {
   display: flex;
   align-items: center;
