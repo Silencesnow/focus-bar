@@ -20,7 +20,7 @@ Focus Bar 是一个 macOS 本地注意力提示条。当前 MVP 只连接 cmux�
 - VS Code workspace 目录：必填绝对路径。
 - 文件与行号：可选，文件路径相对于 workspace。
 
-配置窗口可以单独测试每个 Chrome 链接和 VS Code。保存后，提示条会立即出现带标签的 `🌐` 按钮和 `📝` 图标，不需要等待轮询。工具条会通过 hover、按压、加载中提示和成功/失败消息反馈跳转状态。
+配置窗口可以单独测试每个 Chrome 链接和 VS Code。保存后，提示条会立即出现带标签的 `🌐` 按钮和 `📝` 图标，不需要等待轮询。工具条会通过 hover、按压、加载中提示和成功/失败消息反馈跳转状态，并持续高亮每个任务最后一次成功打开的 Chrome 链接。
 
 当多个 Google Chrome 实例同时运行时，Focus Bar 会选择当前最前面的普通 Chrome，并忽略带 `--remote-debugging-port` 的调试实例。若只有调试实例，请先启动普通 Chrome。
 

@@ -7,6 +7,11 @@ import {
   LogicalSize,
 } from "@tauri-apps/api/window";
 import { fetchAll, startWatcher } from "./cmux";
+import {
+  activateChromeTarget,
+  isChromeTargetActive,
+  type ActiveChromeTargets,
+} from "./chrome-activation";
 import { jumpSmart, jumpToChrome, jumpToCmux, jumpToVscode } from "./jump";
 import { chromeTargetsFromTask } from "./navigation-config";
 import { ensureTaskForCmux, readFocusData, writeFocusData } from "./store";
@@ -31,6 +36,7 @@ let refreshInFlight = false;
 let refreshQueued = false;
 let eventTimer: ReturnType<typeof setTimeout> | null = null;
 let fallbackTimer: ReturnType<typeof setInterval> | null = null;
+const activeChromeTargets: ActiveChromeTargets = new Map();
 const unlisteners: UnlistenFn[] = [];
 
 async function positionWindowTopCenter() {
@@ -153,9 +159,16 @@ function renderCard(task: MergedTask, index: number): string {
   if (task.config.vscode) {
     toolIcons.push('<button type="button" class="tool-button icon-only" data-tool="vscode" title="跳转 VS Code" aria-label="跳转 VS Code">📝</button>');
   }
+  const taskKey = task.config.cmux_workspace_id || task.config.id;
   for (const [targetIndex, target] of chromeTargets.entries()) {
     const label = escapeHtml(target.label || `链接 ${targetIndex + 1}`);
-    toolIcons.push(`<button type="button" class="tool-button chrome-target" data-tool="chrome" data-target-index="${targetIndex}" title="打开 ${label}"><span aria-hidden="true">🌐</span><span class="tool-label">${label}</span></button>`);
+    const active = isChromeTargetActive(
+      activeChromeTargets,
+      taskKey,
+      targetIndex,
+      target.url,
+    );
+    toolIcons.push(`<button type="button" class="tool-button chrome-target${active ? " is-active" : ""}" data-tool="chrome" data-target-index="${targetIndex}" title="打开 ${label}" aria-pressed="${active}"><span aria-hidden="true">🌐</span><span class="tool-label">${label}</span></button>`);
   }
   if (chromeTargets.length === 0 && task.ports.length > 0) {
     toolIcons.push(`<button type="button" class="tool-button chrome-target" data-tool="chrome" title="打开本地预览"><span aria-hidden="true">🌐</span><span class="tool-label">:${task.ports[0]}</span></button>`);
@@ -260,7 +273,17 @@ async function handleExplicitJump(task: MergedTask, trigger: HTMLButtonElement) 
   try {
     if (tool === "cmux") await jumpToCmux(task);
     if (tool === "vscode") await jumpToVscode(task);
-    if (tool === "chrome") await jumpToChrome(task, chromeTarget, targetIndex);
+    if (tool === "chrome") {
+      await jumpToChrome(task, chromeTarget, targetIndex);
+      if (chromeTarget && typeof targetIndex === "number") {
+        activateChromeTarget(
+          activeChromeTargets,
+          task.config.cmux_workspace_id || task.config.id,
+          targetIndex,
+          chromeTarget.url,
+        );
+      }
+    }
     showToast(`已打开“${label}”`, "success");
     await refresh();
   } catch (error) {

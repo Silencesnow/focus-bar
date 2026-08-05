@@ -232,6 +232,14 @@ html, body {
   background: rgba(10, 132, 255, 0.28);
 }
 
+.tool-button.is-active {
+  opacity: 1;
+  color: white;
+  border-color: rgba(10, 132, 255, 0.78);
+  background: rgba(10, 132, 255, 0.36);
+  box-shadow: inset 0 0 0 1px rgba(10, 132, 255, 0.18);
+}
+
 .tool-button:active {
   transform: scale(0.94);
   background: rgba(10, 132, 255, 0.42);
