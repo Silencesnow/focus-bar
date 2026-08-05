@@ -16,8 +16,11 @@ export type HoverHitTarget = {
 
 const HOVER_TARGET_SELECTORS = [
   "#settings-button",
+  "#stats-button",
+  "#global-note-resizer",
   ".task-card",
   ".tool-button",
+  ".inactive-task-toggle",
   "#suggestion.clickable",
   ".ctx-item",
 ];

@@ -16,7 +16,12 @@
       <section class="form-pane">
         <div id="settings-empty" class="settings-empty">选择一个 workspace</div>
         <form id="navigation-form" hidden>
-          <label>显示名称<input id="task-name" autocomplete="off" /></label>
+          <div class="identity-fields">
+            <label class="icon-field">Tab 图标
+              <span class="icon-input-wrap"><span id="task-icon-preview" aria-hidden="true">?</span><input id="task-icon" autocomplete="off" placeholder="🎨 或 FE" /></span>
+            </label>
+            <label>显示名称<input id="task-name" autocomplete="off" /></label>
+          </div>
           <fieldset>
             <legend>Google Chrome</legend>
             <p class="field-hint">一个任务可以配置多个页面，例如不同仓库的 MR。标签会显示在工具条上。</p>

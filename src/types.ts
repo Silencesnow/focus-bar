@@ -3,8 +3,8 @@ export type LegacyTaskStatus = "blocked" | "review" | "verifying" | "done";
 export type StoredTaskStatus = TaskStatus | LegacyTaskStatus;
 
 export const STATUS_META: Record<TaskStatus, { color: string; emoji: string; label: string; bg: string }> = {
-  needs_action: { color: "#ff453a", emoji: "🔴", label: "需要处理", bg: "rgba(255,69,58,0.15)" },
-  needs_review: { color: "#ffd60a", emoji: "🟡", label: "待检查",   bg: "rgba(255,214,10,0.15)" },
+  needs_action: { color: "#ff453a", emoji: "🔴", label: "待处理", bg: "rgba(255,69,58,0.15)" },
+  needs_review: { color: "#ff453a", emoji: "🔴", label: "待处理", bg: "rgba(255,69,58,0.15)" },
   executing:    { color: "#30d158", emoji: "🟢", label: "执行中",   bg: "rgba(48,209,88,0.15)" },
   idle:         { color: "#8e8e93", emoji: "⬜", label: "空闲",     bg: "rgba(142,142,147,0.08)" },
 };
@@ -39,9 +39,16 @@ export interface NavigationError {
 export interface TaskConfig {
   id: string;
   name: string;
+  tab_icon?: string;
   name_overridden?: boolean;
   cmux_workspace_id?: string;
+  cmux_directory?: string;
+  codex_thread_id?: string;
+  codex_directory?: string;
   manual_status?: StoredTaskStatus | null;
+  manual_status_context_id?: string | null;
+  last_viewed_at?: string | null;
+  manually_collapsed_at?: string | null;
   note?: string;
   vscode?: VscodeTarget;
   chrome?: ChromeTarget | ChromeTarget[];
@@ -49,6 +56,7 @@ export interface TaskConfig {
 
 export interface FocusData {
   tasks: TaskConfig[];
+  global_note?: string;
 }
 
 export interface CmuxWorkspace {
@@ -61,6 +69,10 @@ export interface CmuxWorkspace {
   latest_submitted_at: string | null;
   active_surface_title?: string | null;
   active_surface_progress?: string | null;
+  agent_lifecycle?: "running" | "idle" | "needsInput" | "unknown" | null;
+  background_shell_process?: string | null;
+  agent_event_kind?: "question" | "stop" | "running" | null;
+  agent_event_at?: string | null;
   selected: boolean;
   index: number;
   window_id: string;
@@ -96,9 +108,33 @@ export interface CmuxSnapshot {
   fetched_at: number;
 }
 
+export type CodexLifecycle = "executing" | "needs_input" | "completed" | "failed" | "idle";
+
+export interface CodexThread {
+  id: string;
+  title: string;
+  cwd: string;
+  lifecycle: CodexLifecycle;
+  updated_at: number;
+  activity_at: number | null;
+  latest_message: string | null;
+}
+
+export type CodexSourceState =
+  | { status: "ready"; state_path: string }
+  | { status: "error"; message: string; detail: string | null };
+
+export interface CodexSnapshot {
+  source: CodexSourceState;
+  threads: CodexThread[];
+  fetched_at: number;
+}
+
 export interface MergedTask {
   config: TaskConfig;
+  source?: "cmux" | "codex";
   cmux?: CmuxWorkspace;
+  codex?: CodexThread;
   notifications: CmuxNotification[];
   hasUnread: boolean;
   latestNotifSubtitle: string | null;

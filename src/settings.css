@@ -12,11 +12,15 @@ h1 { margin: 0; font-size: 18px; }
 .workspace-item { width: 100%; border: 0; background: transparent; text-align: left; border-radius: 8px; padding: 9px 10px; cursor: pointer; }
 .workspace-item:hover { background: rgba(0,0,0,.05); }
 .workspace-item.selected { color: white; background: #0a84ff; }
-.workspace-title { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-title { display: flex; align-items: center; gap: 6px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-tab-icon { display: inline-grid; place-items: center; flex: 0 0 auto; width: 24px; height: 24px; border-radius: 7px; color: #1d1d1f; background: rgba(0,0,0,.07); font-size: 10px; font-weight: 700; }
 .workspace-dir { display: block; margin-top: 2px; font-size: 10px; opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .form-pane { padding: 20px 24px; overflow: auto; background: #fff; }
 .settings-empty { display: grid; place-items: center; height: 100%; color: #8e8e93; }
 form { display: flex; flex-direction: column; gap: 14px; }
+.identity-fields { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 10px; }
+.icon-input-wrap { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 6px; align-items: center; }
+#task-icon-preview { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: #1d1d1f; background: #e9e9ed; font-size: 15px; font-weight: 700; }
 label { display: flex; flex-direction: column; gap: 5px; font-weight: 600; font-size: 12px; }
 input { width: 100%; border: 1px solid #c7c7cc; border-radius: 7px; padding: 7px 9px; outline: none; background: white; }
 input:focus { border-color: #0a84ff; box-shadow: 0 0 0 3px rgba(10,132,255,.15); }
@@ -48,5 +52,6 @@ footer { display: flex; align-items: center; justify-content: space-between; gap
   input { color: #f5f5f7; border-color: #48484a; background: #2c2c2e; }
   fieldset { border-color: #3a3a3c; }
   .chrome-target-row { border-color: #3a3a3c; background: #242426; }
+  #task-icon-preview, .workspace-tab-icon { color: #f5f5f7; background: rgba(255,255,255,.1); }
   button { color: #f5f5f7; border-color: #48484a; background: #2c2c2e; }
 }

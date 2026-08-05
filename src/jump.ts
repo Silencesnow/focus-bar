@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { chromeTargetsFromTask } from "./navigation-config";
 import type { ChromeTarget, MergedTask } from "./types";
 import { focusWorkspace } from "./cmux";
@@ -9,6 +10,17 @@ export async function jumpToCmux(task: MergedTask): Promise<void> {
   const winId = task.cmux?.window_id || "";
   if (!wsRef && !wsId) throw new Error("No cmux workspace for this task");
   await focusWorkspace(wsRef || wsId || "", wsId || "", winId);
+}
+
+export function codexThreadUrl(threadId: string): string {
+  return `codex://threads/${encodeURIComponent(threadId)}`;
+}
+
+export async function jumpToCodex(task: MergedTask): Promise<void> {
+  const threadId = task.codex?.id || task.config.codex_thread_id;
+  if (!threadId) throw new Error("No Codex thread for this task");
+  await openUrl(codexThreadUrl(threadId));
+  await invoke("note_codex_thread_opened", { threadId });
 }
 
 export async function jumpToVscode(task: MergedTask): Promise<void> {
@@ -39,24 +51,18 @@ export async function jumpToChrome(
   await invoke("focus_chrome_url", { url });
 }
 
-export async function jumpSmart(task: MergedTask): Promise<void> {
-  const status = task.effectiveStatus;
-  const targets: ("cmux" | "vscode" | "chrome")[] = [];
+export type SmartJumpTarget = "cmux" | "vscode" | "chrome";
 
-  switch (status) {
-    case "needs_action":
-      targets.push("cmux", "vscode", "chrome");
-      break;
-    case "needs_review":
-      targets.push("vscode", "cmux", "chrome");
-      break;
-    case "executing":
-      targets.push("cmux", "vscode", "chrome");
-      break;
-    case "idle":
-      targets.push("cmux", "vscode", "chrome");
-      break;
+export function smartJumpTargets(_task: MergedTask): SmartJumpTarget[] {
+  return ["cmux", "vscode", "chrome"];
+}
+
+export async function jumpSmart(task: MergedTask): Promise<void> {
+  if (task.codex || task.config.codex_thread_id) {
+    await jumpToCodex(task);
+    return;
   }
+  const targets = smartJumpTargets(task);
 
   for (const target of targets) {
     try {
@@ -77,7 +83,7 @@ export async function jumpSmart(task: MergedTask): Promise<void> {
     }
   }
 
-  throw new Error("No jump target available for status: " + status);
+  throw new Error("No jump target available for status: " + task.effectiveStatus);
 }
 
 function guessUrlFromPorts(task: MergedTask): string | null {

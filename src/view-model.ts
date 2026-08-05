@@ -43,6 +43,9 @@ function activitySummary(
   reason: string | null,
   surfaceSummary: string | null,
 ): string | null {
+  if (workspace.background_shell_process) {
+    return `后台 shell 仍在运行：${workspace.background_shell_process}`;
+  }
   const message = workspace.latest_conversation_message?.trim();
   if (message) return message;
   const progress = workspace.active_surface_progress?.trim();
@@ -69,6 +72,14 @@ export function formatRelativeTime(value: string | null, now = Date.now()): stri
   return `${Math.floor(hours / 24)}天前`;
 }
 
+export function fallbackRefreshDelay(
+  tasks: Array<Pick<MergedTask, "effectiveStatus">>,
+  codexEnabled = false,
+): number {
+  if (tasks.some((task) => task.effectiveStatus === "executing")) return 2_000;
+  return codexEnabled ? 5_000 : 30_000;
+}
+
 export function mergeWorkspaceTasks(
   workspaces: CmuxWorkspace[],
   notifications: CmuxNotification[],
@@ -85,11 +96,22 @@ export function mergeWorkspaceTasks(
       notifications: workspaceNotifications,
       latestSubmittedAt: workspace.latest_submitted_at,
       activeSurfaceTitle: workspace.active_surface_title,
+      agentLifecycle: workspace.agent_lifecycle,
+      backgroundShellProcess: workspace.background_shell_process,
+      agentEventKind: workspace.agent_event_kind,
+      agentEventAt: workspace.agent_event_at,
+      lastViewedAt: latestValidTimestamp([
+        config.last_viewed_at,
+        ...workspaceNotifications
+          .filter((notification) => notification.is_read)
+          .map((notification) => notification.created_at),
+      ]),
     };
     const reason = statusReason(input);
     const surfaceSummary = runningSurfaceSummary(workspace.active_surface_title);
     return {
       config,
+      source: "cmux" as const,
       cmux: workspace,
       notifications: workspaceNotifications,
       hasUnread: workspaceNotifications.some((item) => !item.is_read),

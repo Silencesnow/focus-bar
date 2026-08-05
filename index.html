@@ -13,6 +13,18 @@
       <div id="source-status" role="status"></div>
       <div id="task-container"></div>
       <div id="suggestion">💤 启动中...</div>
+      <div id="global-note-panel">
+        <div class="global-note-header">
+          <span>待办</span>
+          <span id="global-note-status" role="status"></span>
+        </div>
+        <div class="global-note-input-wrap">
+          <textarea id="global-note" rows="5" placeholder="记录几行待办…" aria-label="全局待办笔记"></textarea>
+          <div id="global-note-resizer" role="separator" aria-orientation="horizontal" aria-label="拖拽调整待办高度" title="拖拽调整待办高度"></div>
+        </div>
+      </div>
+      <div id="footer-actions"><button id="stats-button" type="button" title="查看活动统计" aria-label="查看活动统计"><span aria-hidden="true">◷</span> 统计</button></div>
+      <div id="resize-handle" title="拖拽调整高度" aria-label="拖拽调整高度"><span></span></div>
     </div>
     <div id="context-menu"></div>
     <div id="toast"></div>

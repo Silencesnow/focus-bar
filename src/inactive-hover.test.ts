@@ -22,10 +22,12 @@ test("maps physical cursor coordinates to every hovered DOM target", () => {
   previous.classList.add("is-native-hovered");
   const card = fakeElement();
   const tool = fakeElement();
+  const inactiveToggle = fakeElement();
   const hit = {
     closest(selector: string) {
       if (selector === ".task-card") return card;
       if (selector === ".tool-button") return tool;
+      if (selector === ".inactive-task-toggle") return inactiveToggle;
       return null;
     },
   };
@@ -44,7 +46,8 @@ test("maps physical cursor coordinates to every hovered DOM target", () => {
   expect(previous.classList.values.has("is-native-hovered")).toBe(false);
   expect(card.classList.values.has("is-native-hovered")).toBe(true);
   expect(tool.classList.values.has("is-native-hovered")).toBe(true);
-  expect(next).toEqual([card, tool]);
+  expect(inactiveToggle.classList.values.has("is-native-hovered")).toBe(true);
+  expect(next).toEqual([card, tool, inactiveToggle]);
 });
 
 test("native hover classes use the same visual rules as CSS hover", async () => {
@@ -53,6 +56,7 @@ test("native hover classes use the same visual rules as CSS hover", async () => 
     "#settings-button",
     ".task-card",
     ".tool-button",
+    ".inactive-task-toggle",
     "#suggestion.clickable",
     ".ctx-item",
   ];

@@ -215,7 +215,7 @@ struct ScriptSpec {
     args: Vec<String>,
 }
 
-fn parse_http_url(value: &str) -> Result<Url, NavigationError> {
+fn parse_chrome_url(value: &str) -> Result<Url, NavigationError> {
     let parsed = Url::parse(value).map_err(|error| {
         NavigationError::new(
             NavigationErrorCode::InvalidTarget,
@@ -223,35 +223,41 @@ fn parse_http_url(value: &str) -> Result<Url, NavigationError> {
             Some(error.to_string()),
         )
     })?;
-    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+    let is_web_url =
+        matches!(parsed.scheme(), "http" | "https") && parsed.host_str().is_some();
+    let is_local_file_url = parsed.scheme() == "file"
+        && parsed.host_str().is_none()
+        && parsed.path().starts_with('/');
+    if !is_web_url && !is_local_file_url {
         return Err(NavigationError::new(
             NavigationErrorCode::InvalidTarget,
-            "Chrome URL must use http or https and include a host",
+            "Chrome URL must use http, https, or a local file URL",
             None,
         ));
     }
     Ok(parsed)
 }
 
-pub(crate) fn validate_http_url(value: &str) -> Result<(), NavigationError> {
-    parse_http_url(value).map(|_| ())
+pub(crate) fn validate_chrome_url(value: &str) -> Result<(), NavigationError> {
+    parse_chrome_url(value).map(|_| ())
 }
 
-fn chrome_match_prefix(value: &str) -> Result<String, NavigationError> {
-    let mut parsed = parse_http_url(value)?;
+pub(crate) fn chrome_match_prefix(value: &str) -> Result<String, NavigationError> {
+    let mut parsed = parse_chrome_url(value)?;
     parsed.set_query(None);
     parsed.set_fragment(None);
 
-    let segments = parsed
-        .path_segments()
-        .map(|segments| segments.collect::<Vec<_>>())
-        .unwrap_or_default();
-    if let Some(merge_index) = segments.iter().position(|segment| *segment == "merges") {
-        if segments
-            .get(merge_index + 1)
-            .is_some_and(|id| !id.is_empty() && id.chars().all(|character| character.is_ascii_digit()))
-        {
-            parsed.set_path(&format!("/{}", segments[..=merge_index + 1].join("/")));
+    if matches!(parsed.scheme(), "http" | "https") {
+        let segments = parsed
+            .path_segments()
+            .map(|segments| segments.collect::<Vec<_>>())
+            .unwrap_or_default();
+        if let Some(merge_index) = segments.iter().position(|segment| *segment == "merges") {
+            if segments.get(merge_index + 1).is_some_and(|id| {
+                !id.is_empty() && id.chars().all(|character| character.is_ascii_digit())
+            }) {
+                parsed.set_path(&format!("/{}", segments[..=merge_index + 1].join("/")));
+            }
         }
     }
 
@@ -263,6 +269,19 @@ fn chrome_match_prefix(value: &str) -> Result<String, NavigationError> {
     Ok(parsed.to_string())
 }
 
+pub(crate) fn chrome_urls_match(configured: &str, candidate: &str) -> bool {
+    let Ok(configured) = chrome_match_prefix(configured) else {
+        return false;
+    };
+    let Ok(candidate) = chrome_match_prefix(candidate) else {
+        return false;
+    };
+    candidate == configured
+        || candidate.strip_prefix(&configured).is_some_and(|suffix| {
+            suffix.starts_with('/') || suffix.starts_with('?') || suffix.starts_with('#')
+        })
+}
+
 fn chrome_command(pid: u32, url: &str) -> Result<ScriptSpec, NavigationError> {
     let match_prefix = chrome_match_prefix(url)?;
     Ok(ScriptSpec {
@@ -272,7 +291,7 @@ fn chrome_command(pid: u32, url: &str) -> Result<ScriptSpec, NavigationError> {
 }
 
 fn chrome_open_args(url: &str) -> Result<Vec<String>, NavigationError> {
-    validate_http_url(url)?;
+    validate_chrome_url(url)?;
     Ok(vec!["--new-tab".into(), url.into()])
 }
 
@@ -374,6 +393,22 @@ fn classify_accessibility_failure(detail: &str) -> NavigationErrorCode {
         NavigationErrorCode::AccessibilityPermissionRequired
     } else {
         NavigationErrorCode::TargetCommandFailed
+    }
+}
+
+fn vscode_window_was_found(status_success: bool, response: &str) -> bool {
+    status_success && response.trim() == "FOUND"
+}
+
+fn vscode_open_target(workspace: &Path, workspace_name: &str) -> PathBuf {
+    if workspace.extension().is_some_and(|extension| extension == "code-workspace") {
+        return workspace.to_path_buf();
+    }
+    let named_workspace = workspace.join(format!("{workspace_name}.code-workspace"));
+    if named_workspace.is_file() {
+        named_workspace
+    } else {
+        workspace.to_path_buf()
     }
 }
 
@@ -489,22 +524,36 @@ pub async fn focus_vscode_target(
     } else {
         workspace_name.trim()
     };
+    let open_target = vscode_open_target(&workspace, name);
 
     let mut script_command = Command::new("/usr/bin/osascript");
     script_command.arg("-e").arg(VSCODE_SCRIPT).arg("--").arg(name);
-    let output = run_command(&mut script_command, "VS Code window lookup").await?;
-    if !output.status.success() {
-        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(NavigationError::new(
-            classify_accessibility_failure(&detail),
-            "Could not inspect VS Code windows",
-            Some(detail),
-        ));
-    }
-    let found = String::from_utf8_lossy(&output.stdout).trim() == "FOUND";
+    let lookup = run_command(&mut script_command, "VS Code window lookup").await;
+    let found = match &lookup {
+        Ok(output) => {
+            if !output.status.success() {
+                let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                eprintln!(
+                    "VS Code window lookup failed ({:?}): {detail}",
+                    classify_accessibility_failure(&detail)
+                );
+            }
+            vscode_window_was_found(
+                output.status.success(),
+                &String::from_utf8_lossy(&output.stdout),
+            )
+        }
+        Err(error) => {
+            eprintln!(
+                "VS Code window lookup failed ({:?}): {}",
+                error.code, error.message
+            );
+            false
+        }
+    };
     if !found {
         let mut open_command = Command::new(&code);
-        open_command.arg(&workspace);
+        open_command.arg(&open_target);
         let open_output = run_command(&mut open_command, "VS Code workspace open").await?;
         if !open_output.status.success() {
             return Err(NavigationError::new(
@@ -585,6 +634,20 @@ mod tests {
             chrome_match_prefix("https://example.com/review?mode=files#comment-12").unwrap(),
             "https://example.com/review"
         );
+    }
+
+    #[test]
+    fn local_file_url_is_a_valid_chrome_target() {
+        let url = "file:///Users/test/Documents/preview.html";
+
+        assert_eq!(chrome_match_prefix(url).unwrap(), url);
+    }
+
+    #[test]
+    fn local_file_url_can_be_opened_in_a_new_chrome_tab() {
+        let url = "file:///Users/test/Documents/preview.html";
+
+        assert_eq!(chrome_open_args(url).unwrap(), vec!["--new-tab", url]);
     }
 
     #[test]
@@ -674,6 +737,26 @@ mod tests {
             !VSCODE_SCRIPT.contains("name of w contains targetName"),
             "substring matching lets ling-design select ling-design-B"
         );
+    }
+
+    #[test]
+    fn vscode_lookup_failure_uses_cli_fallback() {
+        assert!(!vscode_window_was_found(false, ""));
+    }
+
+    #[test]
+    fn vscode_cli_prefers_the_named_workspace_file_over_its_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "focus-bar-vscode-workspace-{}",
+            std::process::id()
+        ));
+        let workspace_file = root.join("ling-design.code-workspace");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&workspace_file, "{}").unwrap();
+
+        assert_eq!(vscode_open_target(&root, "ling-design"), workspace_file);
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn run_vscode_title_match(candidate: &str, target: &str) -> String {

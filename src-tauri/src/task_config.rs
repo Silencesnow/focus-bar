@@ -1,5 +1,5 @@
 use crate::navigation::{
-    validate_http_url, vscode_goto_target, NavigationError, NavigationErrorCode,
+    validate_chrome_url, vscode_goto_target, NavigationError, NavigationErrorCode,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -32,7 +32,7 @@ fn validate_inputs(
 ) -> Result<(), NavigationError> {
     if let Some(chrome) = chrome {
         for target in chrome {
-            validate_http_url(target.url.trim())?;
+            validate_chrome_url(target.url.trim())?;
         }
     }
     if let Some(vscode) = vscode {
@@ -50,6 +50,7 @@ fn merge_task_navigation(
     task_id: &str,
     name: &str,
     name_overridden: bool,
+    icon: &str,
     chrome: Option<Vec<ChromeInput>>,
     vscode: Option<VscodeInput>,
 ) -> Result<Value, NavigationError> {
@@ -78,6 +79,12 @@ fn merge_task_navigation(
 
     task.insert("name".into(), Value::String(name.trim().to_string()));
     task.insert("name_overridden".into(), Value::Bool(name_overridden));
+    let icon = icon.trim();
+    if icon.is_empty() {
+        task.remove("tab_icon");
+    } else {
+        task.insert("tab_icon".into(), Value::String(icon.to_string()));
+    }
     match chrome {
         Some(mut chrome) if !chrome.is_empty() => {
             for target in &mut chrome {
@@ -124,6 +131,7 @@ pub fn save_task_navigation(
     task_id: String,
     name: String,
     name_overridden: bool,
+    icon: String,
     chrome: Option<Vec<ChromeInput>>,
     vscode: Option<VscodeInput>,
 ) -> Result<Value, NavigationError> {
@@ -133,8 +141,15 @@ pub fn save_task_navigation(
         .map_err(|error| config_error("Could not read ~/.focus.json", Some(error.to_string())))?;
     let mut data: Value = serde_json::from_str(&raw)
         .map_err(|error| config_error("Could not parse ~/.focus.json", Some(error.to_string())))?;
-    let updated =
-        merge_task_navigation(&mut data, &task_id, &name, name_overridden, chrome, vscode)?;
+    let updated = merge_task_navigation(
+        &mut data,
+        &task_id,
+        &name,
+        name_overridden,
+        &icon,
+        chrome,
+        vscode,
+    )?;
     let temp_path = path.with_extension("json.tmp");
     let content = serde_json::to_vec_pretty(&data)
         .map_err(|error| config_error("Could not encode focus data", Some(error.to_string())))?;
@@ -181,6 +196,7 @@ mod tests {
             "task-1",
             "New",
             true,
+            "FE",
             Some(vec![
                 ChromeInput {
                     label: Some(" Web MR ".into()),
@@ -201,6 +217,7 @@ mod tests {
         .unwrap();
         assert_eq!(updated["name"], "New");
         assert_eq!(updated["name_overridden"], true);
+        assert_eq!(updated["tab_icon"], "FE");
         assert_eq!(updated["note"], "keep me");
         assert_eq!(updated["unknown"], 7);
         assert_eq!(updated["chrome"][0]["label"], "Web MR");
@@ -216,16 +233,39 @@ mod tests {
             "chrome": {"url": "https://old.example"},
             "vscode": {"workspace": "/tmp/old"}
         }]});
-        let updated = merge_task_navigation(&mut data, "task-1", "Old", false, None, None).unwrap();
+        let updated =
+            merge_task_navigation(&mut data, "task-1", "Old", false, "", None, None).unwrap();
         assert!(updated.get("chrome").is_none());
         assert!(updated.get("vscode").is_none());
+    }
+
+    #[test]
+    fn local_file_chrome_target_can_be_saved() {
+        let mut data = json!({"tasks": [{"id": "task-1", "name": "Task"}]});
+        let url = "file:///Users/test/Documents/preview.html";
+
+        let updated = merge_task_navigation(
+            &mut data,
+            "task-1",
+            "Task",
+            false,
+            "",
+            Some(vec![ChromeInput {
+                label: Some("Html".into()),
+                url: url.into(),
+            }]),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(updated["chrome"][0]["url"], url);
     }
 
     #[test]
     fn missing_task_is_an_invalid_target() {
         let mut data = json!({"tasks": []});
         assert_eq!(
-            merge_task_navigation(&mut data, "missing", "Name", false, None, None)
+            merge_task_navigation(&mut data, "missing", "Name", false, "", None, None)
                 .unwrap_err()
                 .code,
             NavigationErrorCode::InvalidTarget

@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { fetchAll } from "./cmux";
+import { fetchCodexSnapshot } from "./codex";
 import {
   formFromTask,
   formsEqual,
@@ -10,14 +11,14 @@ import {
   validateNavigationForm,
   type NavigationForm,
 } from "./navigation-config";
-import { ensureTaskForCmux, readFocusData } from "./store";
-import type { ChromeTarget, CmuxWorkspace, NavigationError, TaskConfig } from "./types";
-import { sourceMessage, taskDisplayName } from "./view-model";
-
-interface SettingsTask { workspace: CmuxWorkspace; config: TaskConfig }
+import { readFocusData, reconcileCodexConfigs, reconcileWorkspaceConfigs, writeFocusData } from "./store";
+import { buildSettingsTasks, type SettingsTask } from "./settings-tasks";
+import { tabIconForTask } from "./tab-icon";
+import type { ChromeTarget, NavigationError, TaskConfig } from "./types";
+import { sourceMessage } from "./view-model";
 
 const fieldIds = {
-  name: "task-name", vscodeWorkspaceName: "vscode-name",
+  name: "task-name", tabIcon: "task-icon", vscodeWorkspaceName: "vscode-name",
   vscodeWorkspace: "vscode-workspace", vscodeFile: "vscode-file", vscodeLine: "vscode-line",
 } as const;
 
@@ -59,8 +60,13 @@ function setForm(form: NavigationForm) {
     input(id).value = form[key as keyof Omit<NavigationForm, "chromeTargets">];
   }
   renderChromeTargets(form.chromeTargets);
+  renderIconPreview();
   savedForm = { ...form, chromeTargets: form.chromeTargets.map((target) => ({ ...target })) };
   updateDirtyState();
+}
+function renderIconPreview() {
+  const title = input("task-name").value || tasks.find((task) => task.config.id === selectedTaskId)?.title || "?";
+  document.getElementById("task-icon-preview")!.textContent = tabIconForTask(input("task-icon").value, title);
 }
 function isDirty(): boolean { return !!savedForm && !formsEqual(savedForm, currentForm()); }
 function updateDirtyState() {
@@ -79,10 +85,10 @@ function formatError(error: unknown): string {
 
 function renderTaskList() {
   const list = document.getElementById("workspace-list")!;
-  list.innerHTML = tasks.map(({ workspace, config }) => `
+  list.innerHTML = tasks.map(({ title, directory, config }) => `
     <button type="button" class="workspace-item${config.id === selectedTaskId ? " selected" : ""}" data-task-id="${config.id}" role="option">
-      <span class="workspace-title">${escapeHtml(taskDisplayName(workspace, config))}</span>
-      <span class="workspace-dir">${escapeHtml(workspace.current_directory)}</span>
+      <span class="workspace-title"><span class="workspace-tab-icon">${escapeHtml(tabIconForTask(config.tab_icon, title))}</span>${escapeHtml(title)}</span>
+      <span class="workspace-dir">${escapeHtml(directory)}</span>
     </button>`).join("");
   list.querySelectorAll<HTMLButtonElement>(".workspace-item").forEach((button) => {
     button.onclick = () => void selectTask(button.dataset.taskId || "");
@@ -103,25 +109,37 @@ async function selectTask(taskId: string) {
   document.getElementById("navigation-form")!.hidden = false;
   setForm(formFromTask({
     ...task.config,
-    name: taskDisplayName(task.workspace, task.config),
+    name: task.title,
   }));
   setStatus("");
   renderTaskList();
 }
 
 async function loadTasks() {
-  const snapshot = await fetchAll();
-  if (snapshot.source.status === "error") {
-    setStatus(sourceMessage(snapshot.source), "error");
-    return;
+  const [snapshot, codexSnapshot] = await Promise.all([fetchAll(), fetchCodexSnapshot()]);
+  let focusData = await readFocusData();
+  let changed = false;
+  const workspaces = snapshot.source.status === "ready" ? snapshot.workspaces : [];
+  const threads = codexSnapshot.source.status === "ready" ? codexSnapshot.threads : [];
+  if (snapshot.source.status === "ready") {
+    const reconciled = reconcileWorkspaceConfigs(workspaces, focusData);
+    focusData = reconciled.data;
+    changed ||= reconciled.changed;
   }
-  const focusData = await readFocusData();
-  tasks = [];
-  for (const workspace of snapshot.workspaces) {
-    let config = focusData.tasks.find((item) => item.cmux_workspace_id === workspace.id);
-    if (!config) config = await ensureTaskForCmux(workspace.id, workspace.title, workspace.current_directory);
-    tasks.push({ workspace, config });
+  if (codexSnapshot.source.status === "ready") {
+    const reconciled = reconcileCodexConfigs(threads, focusData);
+    focusData = reconciled.data;
+    changed ||= reconciled.changed;
   }
+  if (changed) await writeFocusData(focusData);
+  tasks = buildSettingsTasks(workspaces, threads, focusData.tasks);
+  const errors = [
+    snapshot.source.status === "error" ? sourceMessage(snapshot.source) : "",
+    codexSnapshot.source.status === "error" ? codexSnapshot.source.detail || codexSnapshot.source.message : "",
+  ].filter(Boolean);
+  setStatus(errors.join(" "), errors.length ? "error" : "");
+  selectedTaskId = null;
+  savedForm = null;
   renderTaskList();
   const initial = requestedTaskId && tasks.some((item) => item.config.id === requestedTaskId)
     ? requestedTaskId : tasks[0]?.config.id;
@@ -137,13 +155,15 @@ async function saveCurrent() {
   const task = tasks.find((item) => item.config.id === selectedTaskId);
   if (!task) return;
   const nameOverridden = !!normalized.name
-    && normalized.name !== task.workspace.title.trim();
+    && normalized.name !== task.runtimeTitle;
   try {
     const updated = await invoke<TaskConfig>("save_task_navigation", {
       taskId: selectedTaskId, name: normalized.name, nameOverridden,
+      icon: normalized.tab_icon || "",
       chrome: normalized.chrome, vscode: normalized.vscode,
     });
     task.config = updated;
+    if (updated.name_overridden && updated.name.trim()) task.title = updated.name.trim();
     setForm(formFromTask(updated));
     renderTaskList();
     setStatus("已保存", "success");
@@ -208,7 +228,7 @@ function clearVscode() {
 
 async function main() {
   const form = document.getElementById("navigation-form")!;
-  form.addEventListener("input", updateDirtyState);
+  form.addEventListener("input", () => { updateDirtyState(); renderIconPreview(); });
   form.addEventListener("submit", (event) => { event.preventDefault(); void saveCurrent(); });
   document.getElementById("chrome-targets")!.addEventListener("click", (event) => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-action]");
@@ -221,9 +241,9 @@ async function main() {
   document.getElementById("test-vscode")!.addEventListener("click", () => void testVscode());
   document.getElementById("clear-chrome")!.addEventListener("click", clearChrome);
   document.getElementById("clear-vscode")!.addEventListener("click", clearVscode);
-  await listen<{ taskId?: string }>("open-settings-for-task", (event) => {
+  await listen<{ taskId?: string }>("open-settings-for-task", async (event) => {
     requestedTaskId = event.payload.taskId || null;
-    if (requestedTaskId) void selectTask(requestedTaskId);
+    await loadTasks();
   });
   await getCurrentWindow().onCloseRequested(async (event) => {
     event.preventDefault();

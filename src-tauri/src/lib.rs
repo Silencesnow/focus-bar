@@ -1,8 +1,17 @@
 use std::time::Duration;
+use tauri::Manager;
 use tokio::process::Command;
 use tokio::time::timeout;
 
 mod cmux_runtime;
+pub mod activity_tracker;
+mod activity_store;
+#[cfg(target_os = "macos")]
+mod activity_runtime;
+pub mod codex_runtime;
+pub mod task_timing;
+pub mod task_timing_store;
+mod task_timing_runtime;
 #[cfg(target_os = "macos")]
 mod cursor_watcher;
 mod navigation;
@@ -53,6 +62,28 @@ fn home_dir() -> Result<String, String> {
         .ok_or("Cannot find home directory".to_string())
 }
 
+#[tauri::command]
+fn open_activity_stats_window(app: tauri::AppHandle) -> Result<(), String> {
+    let window = if let Some(window) = app.get_webview_window("stats") {
+        window
+    } else {
+        tauri::WebviewWindowBuilder::new(
+            &app,
+            "stats",
+            tauri::WebviewUrl::App("stats.html".into()),
+        )
+        .title("Focus Bar 活动统计")
+        .inner_size(760.0, 650.0)
+        .min_inner_size(620.0, 500.0)
+        .center()
+        .resizable(true)
+        .build()
+        .map_err(|error| format!("无法创建统计窗口: {error}"))?
+    };
+    window.show().map_err(|error| format!("无法显示统计窗口: {error}"))?;
+    window.set_focus().map_err(|error| format!("无法聚焦统计窗口: {error}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -62,12 +93,20 @@ pub fn run() {
             cmux_runtime::fetch_cmux_snapshot,
             cmux_runtime::start_cmux_watcher,
             cmux_runtime::focus_cmux_workspace,
+            codex_runtime::fetch_codex_snapshot,
             navigation::focus_chrome_url,
             navigation::focus_vscode_target,
+            #[cfg(target_os = "macos")]
+            activity_runtime::note_codex_thread_opened,
+            #[cfg(target_os = "macos")]
+            activity_runtime::fetch_activity_summary,
+            task_timing_runtime::record_task_status_snapshot,
+            task_timing_runtime::fetch_task_timing_summary,
             task_config::save_task_navigation,
             read_home_file,
             write_home_file,
             home_dir,
+            open_activity_stats_window,
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]

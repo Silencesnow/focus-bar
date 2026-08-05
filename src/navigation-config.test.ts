@@ -12,6 +12,7 @@ import type { TaskConfig } from "./types";
 function emptyForm(overrides: Partial<NavigationForm> = {}): NavigationForm {
   return {
     name: "Task",
+    tabIcon: "",
     chromeTargets: [],
     vscodeWorkspaceName: "",
     vscodeWorkspace: "",
@@ -22,9 +23,15 @@ function emptyForm(overrides: Partial<NavigationForm> = {}): NavigationForm {
 }
 
 describe("normalizeNavigationForm", () => {
+  test("normalizes a configured Tab icon", () => {
+    expect(normalizeNavigationForm(emptyForm({ tabIcon: " 👨‍💻 " })).tab_icon)
+      .toBe("👨‍💻");
+  });
+
   test("normalizes empty target groups away", () => {
     expect(normalizeNavigationForm(emptyForm())).toEqual({
       name: "Task",
+      tab_icon: null,
       chrome: null,
       vscode: null,
     });
@@ -38,6 +45,7 @@ describe("normalizeNavigationForm", () => {
       ],
     }))).toEqual({
       name: "Task",
+      tab_icon: null,
       chrome: [
         { label: "Web MR", url: "https://git.example.com/web/merge_requests/12" },
         { label: "API MR", url: "https://git.example.com/api/merge_requests/34" },
@@ -53,6 +61,7 @@ describe("normalizeNavigationForm", () => {
       vscodeLine: "42",
     }))).toEqual({
       name: "Task",
+      tab_icon: null,
       chrome: null,
       vscode: {
         workspace: "/tmp/my-app",
@@ -72,6 +81,15 @@ describe("validateNavigationForm", () => {
       .toEqual([]);
   });
 
+  test("accepts an absolute local file Chrome URL", () => {
+    expect(validateNavigationForm(emptyForm({
+      chromeTargets: [{
+        label: "Html",
+        url: "file:///Users/shamingming/Documents/work/myAgent/docs/mini-agent-stage-1.html",
+      }],
+    }))).toEqual([]);
+  });
+
   test("rejects an invalid URL in any Chrome target", () => {
     expect(validateNavigationForm(emptyForm({
       chromeTargets: [
@@ -79,7 +97,7 @@ describe("validateNavigationForm", () => {
         { label: "API MR", url: "javascript:alert(1)" },
       ],
     })))
-      .toContain("“API MR”必须是有效的 http 或 https URL");
+      .toContain("“API MR”必须是有效的 http、https 或本地 file:// URL");
   });
 
   test("rejects a relative VS Code workspace", () => {
@@ -106,6 +124,7 @@ test("prefills existing navigation fields", () => {
   const task: TaskConfig = {
     id: "task",
     name: "Configured",
+    tab_icon: "FE",
     chrome: [
       { label: "Web MR", url: "https://example.com/web" },
       { label: "API MR", url: "https://example.com/api" },
@@ -118,6 +137,7 @@ test("prefills existing navigation fields", () => {
     },
   };
   const form = formFromTask(task);
+  expect(form.tabIcon).toBe("FE");
   expect(form.chromeTargets).toEqual([
     { label: "Web MR", url: "https://example.com/web" },
     { label: "API MR", url: "https://example.com/api" },
@@ -139,6 +159,7 @@ test("prefills legacy single Chrome target", () => {
 
 test("detects dirty forms after trimming", () => {
   expect(formsEqual(emptyForm(), emptyForm({ name: " Task " }))).toBe(true);
+  expect(formsEqual(emptyForm(), emptyForm({ tabIcon: "FE" }))).toBe(false);
   expect(formsEqual(emptyForm(), emptyForm({
     chromeTargets: [{ label: "Docs", url: "https://example.com" }],
   }))).toBe(false);

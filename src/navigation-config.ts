@@ -4,9 +4,11 @@ import type {
   TaskConfig,
   VscodeTarget,
 } from "./types";
+import { normalizeTabIcon } from "./tab-icon";
 
 export interface NavigationForm {
   name: string;
+  tabIcon: string;
   chromeTargets: ChromeTarget[];
   vscodeWorkspaceName: string;
   vscodeWorkspace: string;
@@ -16,6 +18,7 @@ export interface NavigationForm {
 
 export interface NormalizedNavigation {
   name: string;
+  tab_icon: string | null;
   chrome: ChromeTarget[] | null;
   vscode: VscodeTarget | null;
 }
@@ -48,6 +51,7 @@ export function chromeTargetsFromTask(task: TaskConfig): ChromeTarget[] {
 export function formFromTask(task: TaskConfig): NavigationForm {
   return {
     name: task.name || "",
+    tabIcon: task.tab_icon || "",
     chromeTargets: chromeTargetsFromTask(task),
     vscodeWorkspaceName: task.vscode?.workspace_name || "",
     vscodeWorkspace: task.vscode?.workspace || "",
@@ -58,6 +62,7 @@ export function formFromTask(task: TaskConfig): NavigationForm {
 
 export function normalizeNavigationForm(form: NavigationForm): NormalizedNavigation {
   const name = form.name.trim();
+  const tabIcon = normalizeTabIcon(form.tabIcon);
   const chrome = form.chromeTargets
     .map((target, index) => {
       const url = target.url.trim();
@@ -74,6 +79,7 @@ export function normalizeNavigationForm(form: NavigationForm): NormalizedNavigat
 
   return {
     name,
+    tab_icon: tabIcon || null,
     chrome: chrome.length ? chrome : null,
     vscode: workspace
       ? {
@@ -97,9 +103,11 @@ export function validateNavigationForm(form: NavigationForm): string[] {
     }
     try {
       const url = new URL(urlValue);
-      if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.host) throw new Error();
+      const isWebUrl = (url.protocol === "http:" || url.protocol === "https:") && Boolean(url.host);
+      const isLocalFileUrl = url.protocol === "file:" && !url.host && url.pathname.startsWith("/");
+      if (!isWebUrl && !isLocalFileUrl) throw new Error();
     } catch {
-      errors.push(`“${label}”必须是有效的 http 或 https URL`);
+      errors.push(`“${label}”必须是有效的 http、https 或本地 file:// URL`);
     }
   });
 

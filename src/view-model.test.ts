@@ -37,14 +37,17 @@ describe("mergeWorkspaceTasks", () => {
     expect(tasks[0].cmux?.id).toBe("current-id");
   });
 
-  test("derives attention state from the workspace notifications", () => {
+  test("derives action state from an explicit workspace question", () => {
     const notification: CmuxNotification = {
       id: "n1", workspace_id: "current-id", title: "Agent",
       subtitle: "Waiting for input", body: "Please answer", is_read: false,
       created_at: "2026-07-10T10:00:00Z", tab_title: null,
     };
+    const current = workspace("current-id", "Current");
+    current.agent_event_kind = "question";
+    current.agent_event_at = "2026-07-10T10:00:00Z";
     const tasks = mergeWorkspaceTasks(
-      [workspace("current-id", "Current")],
+      [current],
       [notification],
       [config("current-id", "Current")],
     );
@@ -127,6 +130,47 @@ describe("mergeWorkspaceTasks", () => {
     expect(task.activitySummary).toBe("Running 1 shell command…");
     expect(task.activityAt).toBeNull();
   });
+
+  test("shows an immediate review reason for a static Claude surface", () => {
+    const current = workspace("current-id", "Current");
+    current.active_surface_title = "✳ 支持yarn serve命令动态配置端口";
+
+    const task = mergeWorkspaceTasks(
+      [current],
+      [],
+      [config("current-id", "Current")],
+    )[0];
+
+    expect(task.effectiveStatus).toBe("needs_review");
+    expect(task.statusReason).toBe("Claude 已完成，结果待查看");
+  });
+
+  test("a viewed static Claude result becomes idle", () => {
+    const current = workspace("current-id", "Current");
+    current.active_surface_title = "✳ 支持yarn serve命令动态配置端口";
+    const saved = config("current-id", "Current");
+    saved.last_viewed_at = "2026-07-14T10:00:00Z";
+
+    const task = mergeWorkspaceTasks([current], [], [saved])[0];
+
+    expect(task.effectiveStatus).toBe("idle");
+  });
+
+  test("shows the active background shell instead of a completed Claude message", () => {
+    const current = workspace("current-id", "Current");
+    current.active_surface_title = "✳ 编译任务";
+    current.background_shell_process = "ninja";
+    current.latest_conversation_message = "任务已完成";
+
+    const task = mergeWorkspaceTasks(
+      [current],
+      [],
+      [config("current-id", "Current")],
+    )[0];
+
+    expect(task.effectiveStatus).toBe("executing");
+    expect(task.activitySummary).toBe("后台 shell 仍在运行：ninja");
+  });
 });
 
 test("formats relative activity time without throwing on invalid input", () => {
@@ -148,4 +192,15 @@ test("access denied guidance names allowAll", () => {
     message: "denied",
     detail: "broken pipe",
   })).toContain("allowAll");
+});
+
+test("polls quickly only while an agent is executing", () => {
+  const fallbackRefreshDelay = (viewModel as unknown as {
+    fallbackRefreshDelay?: (tasks: Array<{ effectiveStatus: string }>, codexEnabled?: boolean) => number;
+  }).fallbackRefreshDelay;
+
+  expect(fallbackRefreshDelay?.([{ effectiveStatus: "executing" }])).toBe(2_000);
+  expect(fallbackRefreshDelay?.([], true)).toBe(5_000);
+  expect(fallbackRefreshDelay?.([{ effectiveStatus: "needs_action" }])).toBe(30_000);
+  expect(fallbackRefreshDelay?.([])).toBe(30_000);
 });

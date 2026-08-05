@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/src/stats.css" />
+    <title>Focus Bar 活动统计</title>
+    <script type="module" src="/src/stats.ts" defer></script>
+  </head>
+  <body>
+    <main class="stats-shell">
+      <header class="stats-header">
+        <div><p class="eyebrow">FOCUS BAR</p><h1>任务执行统计</h1><p class="subtitle">基于任务红/绿状态区间统计执行、中断与轮次，不保存输入内容。</p><p class="range-start" id="range-start"></p></div>
+        <div class="period-switch" role="group" aria-label="统计范围">
+          <button type="button" data-period="today" class="active">今天</button>
+          <button type="button" data-period="week">近 7 天</button>
+        </div>
+      </header>
+      <section id="stats-content" aria-live="polite"><div class="loading">正在读取本地统计…</div></section>
+      <footer class="stats-footer"><span>状态采集中断超过 15 秒不跨离线时段补时间</span><span id="last-updated"></span></footer>
+    </main>
+  </body>
+</html>
