@@ -4,11 +4,11 @@
 
 Focus Bar currently sends a static AppleScript to `application "Google Chrome"`. This works when one Chrome instance is running, but macOS routes Apple Events to an arbitrary instance when multiple processes share the `com.google.Chrome` bundle identifier. In the current environment it selected a cmux-launched remote-debugging Chrome instead of the user's ordinary Chrome.
 
-The selected behavior is: target the frontmost visible non-debug Chrome instance, match the configured URL exactly inside that process, and open a new tab in that same process only when no exact match exists.
+The selected behavior is: target the frontmost visible non-debug Chrome instance, match the configured URL exactly inside that process, and use the official Chrome launcher to open a missing URL in the ordinary Chrome session. The cmux remote-debugging instance must never receive the target.
 
 ## Considered Approaches
 
-1. **Process-specific ScriptingBridge navigation (selected).** Discover ordinary Chrome PIDs, choose the frontmost visible instance, and connect through `SBApplication(processIdentifier:)`. This preserves URL-only configuration and handles multiple instances without a browser extension.
+1. **PID-targeted lookup with an official-launcher fallback (selected).** Discover ordinary Chrome PIDs, choose the frontmost visible instance, connect through `SBApplication(processIdentifier:)` for exact lookup, and use the official Chrome executable only when the URL is missing. This preserves URL-only configuration and avoids the cmux remote-debugging instance without a browser extension.
 2. **Add a Chrome profile/instance field to task settings.** Explicit but exposes implementation details to the user, becomes stale when PIDs change, and does not match the requested “current Chrome” behavior.
 3. **Build a Chrome extension plus native messaging host.** Offers excellent tab control but adds installation, distribution, permissions, and a persistent bridge that are disproportionate to the current local MVP.
 
@@ -22,15 +22,16 @@ Core Graphics returns the on-screen window list in front-to-back order. The firs
 
 The process discovery and selection logic is kept pure after system data is collected so it can be unit-tested with synthetic process and window-order fixtures.
 
-### Process-specific tab navigation
+### PID-targeted lookup and normal-session fallback
 
 The existing static-script boundary is preserved, but the Chrome script uses AppleScriptObjC's ScriptingBridge framework:
 
 - Rust passes the selected PID and configured URL as `osascript` arguments.
 - The script creates `SBApplication(processIdentifier:)` for that PID.
 - It reads each window's tab URLs in one batch per window.
-- Exact string equality selects a matching tab, moves its window to the front, and activates that Chrome process.
-- If no exact match exists, it creates a tab in the selected instance and sets its URL. If the instance has no windows, it creates a window first.
+- Exact string equality selects a matching tab and moves its window to the front.
+- AppKit resolves `NSRunningApplication(processIdentifier:)` for the same PID and calls `activateWithOptions(3)`, because ScriptingBridge's `activate` switches the tab but does not reliably make that process frontmost when multiple Chrome roots share one bundle identifier.
+- If no exact match exists, the script returns `NOT_FOUND`. Rust then launches `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --new-tab <url>`. In the supported ordinary-plus-cmux-debug setup, Chrome routes this request to the ordinary default session; the isolated remote-debugging instance remains untouched.
 
 User-provided URLs are never interpolated into script source.
 
@@ -43,13 +44,15 @@ The settings test action and overlay browser icon use the same command and there
 ## Testing
 
 - Unit tests cover debug-process exclusion, front-to-back eligible PID selection, deterministic hidden-window fallback, and no-eligible-instance errors.
-- Static-script tests verify that PID and URL are arguments, tab URLs are read in batches, and user values never enter source.
+- Static-script tests verify that PID and URL are arguments, tab URLs are read in batches, AppKit activates the selected PID, and user values never enter source.
+- Fallback tests verify that the URL remains a standalone `--new-tab` argument and that the ScriptingBridge script returns `NOT_FOUND` instead of dynamically constructing scripting objects.
 - The timeout regression test proves the child process is terminated.
 - Live acceptance runs with both the ordinary Chrome and cmux debug Chrome present: an existing exact URL must focus in the ordinary instance; a missing URL must open there; no test tab or permission process may remain afterward.
 
 ## Out of Scope
 
 - Choosing a specific Chrome profile within one ordinary process.
+- Guaranteeing the fallback's exact ordinary PID when multiple independent non-debug Chrome roots use different user-data directories; exact existing-tab lookup remains PID-specific.
 - Supporting Chromium, Chrome Canary, Arc, Safari, or Edge.
 - Installing a Chrome extension or native messaging host.
 - Controlling remote-debugging Chrome instances.

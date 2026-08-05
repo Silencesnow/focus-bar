@@ -4,7 +4,7 @@
 
 **Goal:** Route exact Chrome URL jumps to the frontmost ordinary Google Chrome process instead of a cmux-launched remote-debugging instance.
 
-**Architecture:** Rust discovers root Chrome processes from `/bin/ps`, excludes `--remote-debugging-port` instances, and combines the remaining PIDs with Core Graphics front-to-back window order. A static AppleScriptObjC script receives the selected PID and URL as arguments, connects with `SBApplication(processIdentifier:)`, and focuses or creates a tab inside that exact process.
+**Architecture:** Rust discovers root Chrome processes from `/bin/ps`, excludes `--remote-debugging-port` instances, and combines the remaining PIDs with Core Graphics front-to-back window order. A static AppleScriptObjC script receives the selected PID and URL as arguments, connects with `SBApplication(processIdentifier:)`, focuses exact matches, and activates the same PID through AppKit. On `NOT_FOUND`, Rust invokes the official Chrome executable with `--new-tab <url>` so the ordinary default session opens the target while the cmux debug instance remains untouched.
 
 **Tech Stack:** Rust 2021, Tokio, core-foundation 0.10, core-graphics 0.25, AppleScriptObjC, ScriptingBridge, Tauri 2, TypeScript 5.6, Bun.
 
@@ -302,7 +302,7 @@ git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/src/navigation.rs
 git commit -m "feat: select the frontmost ordinary Chrome process"
 ```
 
-### Task 3: PID-targeted exact tab navigation
+### Task 3: PID-targeted exact tab lookup and ordinary-session fallback
 
 **Files:**
 - Modify: `src-tauri/src/navigation.rs`
@@ -310,7 +310,7 @@ git commit -m "feat: select the frontmost ordinary Chrome process"
 **Interfaces:**
 - Changes: `chrome_command(pid: u32, url: &str) -> Result<ScriptSpec, NavigationError>`.
 - Consumes: PID from Task 2 and URL from existing Tauri command.
-- Produces: a static AppleScriptObjC ScriptingBridge command with args `[pid, url]`.
+- Produces: a static AppleScriptObjC ScriptingBridge command with args `[pid, url]` plus a safe official-launcher fallback with args `[--new-tab, url]`.
 
 - [ ] **Step 1: Write failing command-construction tests**
 
@@ -344,12 +344,14 @@ The script must:
 
 ```applescript
 use framework "Foundation"
+use framework "AppKit"
 use framework "ScriptingBridge"
 
 on run argv
   set targetPid to (item 1 of argv) as integer
   set targetUrl to item 2 of argv
   set chromeApp to current application's SBApplication's applicationWithProcessIdentifier:targetPid
+  set runningApp to current application's NSRunningApplication's runningApplicationWithProcessIdentifier:targetPid
   set chromeWindows to chromeApp's valueForKey:"windows"
 
   repeat with chromeWindow in chromeWindows
@@ -359,31 +361,17 @@ on run argv
       if (tabUrls's objectAtIndex:tabIndex) as text is targetUrl then
         chromeWindow's setValue:(tabIndex + 1) forKey:"activeTabIndex"
         chromeWindow's setValue:1 forKey:"index"
-        chromeApp's activate()
+        runningApp's activateWithOptions:3
         return "FOUND"
       end if
     end repeat
   end repeat
 
-  if (count of chromeWindows) is 0 then
-    set windowClass to chromeApp's classForScriptingClass:"window"
-    set newWindow to windowClass's alloc()'s initWithProperties:(current application's NSDictionary's dictionary())
-    chromeWindows's addObject:newWindow
-    set chromeWindows to chromeApp's valueForKey:"windows"
-  end if
-
-  set targetWindow to chromeWindows's objectAtIndex:0
-  set tabClass to chromeApp's classForScriptingClass:"tab"
-  set properties to current application's NSDictionary's dictionaryWithObject:targetUrl forKey:"URL"
-  set newTab to tabClass's alloc()'s initWithProperties:properties
-  (targetWindow's valueForKey:"tabs")'s addObject:newTab
-  targetWindow's setValue:1 forKey:"index"
-  chromeApp's activate()
-  return "OPENED"
+  return "NOT_FOUND"
 end run
 ```
 
-Keep the script as a Rust raw string constant. `chrome_command` validates the URL and returns `args: vec![pid.to_string(), url.to_string()]`.
+Keep the script as a Rust raw string constant. `chrome_command` validates the URL and returns `args: vec![pid.to_string(), url.to_string()]`. Add `chrome_open_args`, which validates the same URL and returns `vec!["--new-tab", url]`. Do not dynamically construct ScriptingBridge tabs: live testing showed that the proxy class cannot be initialized before it belongs to a container.
 
 - [ ] **Step 4: Select PID before executing navigation**
 
@@ -401,7 +389,7 @@ let pid = select_chrome_pid(&processes, &chrome_window_order()).ok_or_else(|| {
 let spec = chrome_command(pid, &url)?;
 ```
 
-Invoke `/usr/bin/osascript -l AppleScript -e <static-script> -- <pid> <url>`. Preserve existing permission classification and timeout handling.
+Invoke `/usr/bin/osascript -l AppleScript -e <static-script> -- <pid> <url>`. On `FOUND`, return success. On `NOT_FOUND`, invoke `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --new-tab <url>` through `run_command`. Preserve existing permission classification and timeout handling.
 
 - [ ] **Step 5: Verify and commit**
 
