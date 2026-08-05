@@ -60,6 +60,7 @@ export interface CmuxWorkspace {
   latest_conversation_message: string | null;
   latest_submitted_at: string | null;
   active_surface_title?: string | null;
+  active_surface_progress?: string | null;
   selected: boolean;
   index: number;
   window_id: string;

@@ -188,19 +188,36 @@ fn parse_json(raw: &str) -> Result<Value, CmuxError> {
     })
 }
 
-fn selected_surface_title(response: &Value) -> Option<String> {
-    response
+fn selected_terminal_surface(response: &Value) -> Option<(String, String)> {
+    let surface = response
         .get("surfaces")?
         .as_array()?
         .iter()
         .find(|surface| {
             surface.get("selected").and_then(Value::as_bool) == Some(true)
                 && surface.get("type").and_then(Value::as_str) == Some("terminal")
-        })?
-        .get("title")?
-        .as_str()
+        })?;
+    let id = surface.get("id")?.as_str()?.trim();
+    let title = surface.get("title")?.as_str()?.trim();
+    if id.is_empty() || title.is_empty() {
+        return None;
+    }
+    Some((id.to_string(), title.to_string()))
+}
+
+fn surface_title_is_running(title: &str) -> bool {
+    let mut characters = title.chars();
+    matches!(characters.next(), Some(character) if ('\u{2800}'..='\u{28ff}').contains(&character))
+        && characters.next().is_none_or(char::is_whitespace)
+}
+
+fn active_progress_line(screen: &str) -> Option<String> {
+    screen
+        .lines()
+        .rev()
+        .filter_map(|line| line.trim().strip_prefix('⏺'))
         .map(str::trim)
-        .filter(|title| !title.is_empty())
+        .find(|line| !line.is_empty())
         .map(str::to_string)
 }
 
@@ -243,7 +260,10 @@ async fn run_cmux(
     }
 }
 
-async fn active_surface_title(context: &RuntimeContext, workspace_id: &str) -> Option<String> {
+async fn active_surface_details(
+    context: &RuntimeContext,
+    workspace_id: &str,
+) -> Option<(String, Option<String>)> {
     let raw = run_cmux(
         context,
         &[
@@ -258,7 +278,28 @@ async fn active_surface_title(context: &RuntimeContext, workspace_id: &str) -> O
     )
     .await
     .ok()?;
-    selected_surface_title(&parse_json(&raw).ok()?)
+    let (surface_id, title) = selected_terminal_surface(&parse_json(&raw).ok()?)?;
+    let progress = if surface_title_is_running(&title) {
+        run_cmux(
+            context,
+            &[
+                "read-screen".into(),
+                "--workspace".into(),
+                workspace_id.into(),
+                "--surface".into(),
+                surface_id,
+                "--lines".into(),
+                "50".into(),
+            ],
+            COMMAND_TIMEOUT,
+        )
+        .await
+        .ok()
+        .and_then(|screen| active_progress_line(&screen))
+    } else {
+        None
+    };
+    Some((title, progress))
 }
 
 fn error_snapshot(error: CmuxError) -> CmuxSnapshot {
@@ -338,9 +379,9 @@ async fn fetch_snapshot_result() -> Result<CmuxSnapshot, CmuxError> {
         for item in items {
             let mut item = item.clone();
             let needs_surface_fallback = item.get("latest_submitted_at").is_none_or(Value::is_null);
-            let surface_title = if needs_surface_fallback {
+            let surface_details = if needs_surface_fallback {
                 match item.get("id").and_then(Value::as_str) {
-                    Some(workspace_id) => active_surface_title(&context, workspace_id).await,
+                    Some(workspace_id) => active_surface_details(&context, workspace_id).await,
                     None => None,
                 }
             } else {
@@ -351,8 +392,11 @@ async fn fetch_snapshot_result() -> Result<CmuxSnapshot, CmuxError> {
                     "window_id".into(),
                     Value::String(resolved_window_id.clone()),
                 );
-                if let Some(title) = surface_title {
+                if let Some((title, progress)) = surface_details {
                     object.insert("active_surface_title".into(), Value::String(title));
+                    if let Some(progress) = progress {
+                        object.insert("active_surface_progress".into(), Value::String(progress));
+                    }
                 }
             }
             workspaces.push(item);
@@ -569,17 +613,30 @@ mod tests {
     }
 
     #[test]
-    fn selected_surface_title_uses_the_selected_terminal() {
+    fn selected_terminal_surface_includes_id_and_title() {
         let response = serde_json::json!({
             "surfaces": [
-                {"selected": false, "title": "yarn serve", "type": "terminal"},
-                {"selected": true, "title": "⠂ 支持yarn serve命令动态配置端口", "type": "terminal"}
+                {"id": "surface-5", "selected": false, "title": "yarn serve", "type": "terminal"},
+                {"id": "surface-7", "selected": true, "title": "⠂ 支持yarn serve命令动态配置端口", "type": "terminal"}
             ]
         });
 
         assert_eq!(
-            selected_surface_title(&response),
-            Some("⠂ 支持yarn serve命令动态配置端口".into())
+            selected_terminal_surface(&response),
+            Some((
+                "surface-7".into(),
+                "⠂ 支持yarn serve命令动态配置端口".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn active_progress_uses_the_last_claude_action() {
+        let screen = "⏺ Now delete the header and rebuild.\n\n⏺ Running 1 shell command…\n  ⎿ build (22s)\n\n✽ Canoodling… (4m 26s)";
+
+        assert_eq!(
+            active_progress_line(screen),
+            Some("Running 1 shell command…".into())
         );
     }
 

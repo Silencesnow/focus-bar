@@ -45,6 +45,8 @@ function activitySummary(
 ): string | null {
   const message = workspace.latest_conversation_message?.trim();
   if (message) return message;
+  const progress = workspace.active_surface_progress?.trim();
+  if (progress) return progress;
   if (surfaceSummary) return surfaceSummary;
   const notification = notifications[0];
   return notification?.subtitle.trim()

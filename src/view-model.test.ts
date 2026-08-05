@@ -107,9 +107,10 @@ describe("mergeWorkspaceTasks", () => {
     expect(task.activityAt).toBeNull();
   });
 
-  test("uses the running surface title when workspace submission metadata is missing", () => {
+  test("uses the running surface progress when workspace submission metadata is missing", () => {
     const current = workspace("current-id", "Current");
     current.active_surface_title = "⠐ 支持yarn serve命令动态配置端口";
+    current.active_surface_progress = "Running 1 shell command…";
     const notification: CmuxNotification = {
       id: "n1", workspace_id: "current-id", title: "Claude Code",
       subtitle: "", body: "Claude is waiting for your input", is_read: true,
@@ -123,7 +124,7 @@ describe("mergeWorkspaceTasks", () => {
     )[0];
 
     expect(task.effectiveStatus).toBe("executing");
-    expect(task.activitySummary).toBe("支持yarn serve命令动态配置端口");
+    expect(task.activitySummary).toBe("Running 1 shell command…");
     expect(task.activityAt).toBeNull();
   });
 });
