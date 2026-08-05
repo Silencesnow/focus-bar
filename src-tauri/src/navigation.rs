@@ -8,6 +8,98 @@ use tokio::time::{sleep, timeout};
 use url::Url;
 
 const TARGET_TIMEOUT: Duration = Duration::from_secs(8);
+const CHROME_EXECUTABLE: &str =
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+
+#[derive(Debug, Clone, PartialEq)]
+struct ChromeProcess {
+    pid: u32,
+    command: String,
+}
+
+fn parse_chrome_processes(output: &str) -> Vec<ChromeProcess> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            let split = line.find(char::is_whitespace)?;
+            let pid = line[..split].parse().ok()?;
+            let command = line[split..].trim();
+            if !command.starts_with(CHROME_EXECUTABLE)
+                || command
+                    .as_bytes()
+                    .get(CHROME_EXECUTABLE.len())
+                    .is_some_and(|character| !character.is_ascii_whitespace())
+                || command.contains("--remote-debugging-port")
+            {
+                return None;
+            }
+            Some(ChromeProcess { pid, command: command.into() })
+        })
+        .collect()
+}
+
+fn select_chrome_pid(processes: &[ChromeProcess], window_order: &[u32]) -> Option<u32> {
+    let eligible: std::collections::HashSet<u32> =
+        processes.iter().map(|process| process.pid).collect();
+    window_order
+        .iter()
+        .copied()
+        .find(|pid| eligible.contains(pid))
+        .or_else(|| processes.iter().map(|process| process.pid).min())
+}
+
+#[cfg(target_os = "macos")]
+fn chrome_window_order() -> Vec<u32> {
+    use core_foundation::array::CFArray;
+    use core_foundation::base::{CFType, TCFType};
+    use core_foundation::dictionary::CFDictionary;
+    use core_foundation::number::CFNumber;
+    use core_foundation::string::CFString;
+    use core_graphics::window::{
+        copy_window_info, kCGNullWindowID, kCGWindowListExcludeDesktopElements,
+        kCGWindowListOptionOnScreenOnly, kCGWindowOwnerPID,
+    };
+
+    let options = kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements;
+    let Some(raw) = copy_window_info(options, kCGNullWindowID) else {
+        return vec![];
+    };
+    let windows: CFArray<CFDictionary<CFString, CFType>> =
+        unsafe { CFArray::wrap_under_get_rule(raw.as_concrete_TypeRef()) };
+    let pid_key = unsafe { CFString::wrap_under_get_rule(kCGWindowOwnerPID) };
+    let mut seen = std::collections::HashSet::new();
+
+    windows
+        .iter()
+        .filter_map(|window| {
+            let value = window.find(&pid_key)?;
+            let pid = value.downcast::<CFNumber>()?.to_i64()? as u32;
+            seen.insert(pid).then_some(pid)
+        })
+        .collect()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn chrome_window_order() -> Vec<u32> {
+    vec![]
+}
+
+async fn discover_chrome_processes() -> Result<Vec<ChromeProcess>, NavigationError> {
+    let mut command = Command::new("/bin/ps");
+    command.args(["-axo", "pid=,command="]);
+    let output = run_command(&mut command, "Chrome process discovery").await?;
+    if !output.status.success() {
+        return Err(NavigationError::new(
+            NavigationErrorCode::TargetCommandFailed,
+            "Could not inspect Chrome processes",
+            Some(String::from_utf8_lossy(&output.stderr).trim().into()),
+        ));
+    }
+    Ok(parse_chrome_processes(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
+}
 
 const CHROME_SCRIPT: &str = r#"
 on run argv
@@ -330,6 +422,39 @@ pub async fn focus_vscode_target(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn chrome_process(pid: u32) -> ChromeProcess {
+        ChromeProcess { pid, command: CHROME_EXECUTABLE.into() }
+    }
+
+    #[test]
+    fn chrome_process_parser_excludes_remote_debugging() {
+        let output = "712 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n\
+                      1899 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --remote-debugging-port=9222 --user-data-dir=/tmp/debug\n\
+                      1905 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper --type=gpu-process";
+        assert_eq!(
+            parse_chrome_processes(output),
+            vec![ChromeProcess { pid: 712, command: CHROME_EXECUTABLE.into() }]
+        );
+    }
+
+    #[test]
+    fn frontmost_eligible_window_wins() {
+        let processes = vec![chrome_process(100), chrome_process(200)];
+        assert_eq!(select_chrome_pid(&processes, &[999, 200, 100]), Some(200));
+    }
+
+    #[test]
+    fn hidden_windows_fall_back_to_lowest_pid() {
+        let processes = vec![chrome_process(200), chrome_process(100)];
+        assert_eq!(select_chrome_pid(&processes, &[]), Some(100));
+    }
+
+    #[test]
+    fn debug_only_processes_produce_no_target() {
+        let output = "1899 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --remote-debugging-port=9222";
+        assert_eq!(select_chrome_pid(&parse_chrome_processes(output), &[]), None);
+    }
 
     #[test]
     fn chrome_url_is_an_argument_not_script_source() {
