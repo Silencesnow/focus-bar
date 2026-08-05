@@ -3,6 +3,7 @@ use tokio::process::Command;
 use tokio::time::timeout;
 
 mod cmux_runtime;
+mod navigation;
 
 #[tauri::command]
 async fn shell_output(cmd: String, args: Vec<String>) -> Result<String, String> {
@@ -58,6 +59,8 @@ pub fn run() {
             cmux_runtime::fetch_cmux_snapshot,
             cmux_runtime::start_cmux_watcher,
             cmux_runtime::focus_cmux_workspace,
+            navigation::focus_chrome_url,
+            navigation::focus_vscode_target,
             read_home_file,
             write_home_file,
             home_dir,
